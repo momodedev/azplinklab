@@ -11,7 +11,7 @@ Creates:
 - Bidirectional VNet peering
 - NSG for the appliance subnet
 - Azure DNS Private Resolver and inbound endpoint, using ARM REST APIs
-- Optional Windows Server 2022 appliance VM without a public IP
+- Optional Windows Server appliance VM without a public IP
 
 Azure Migrate Project creation and Generate Key are intentionally completed in Azure Portal because the Azure Migrate service orchestrates its own private endpoints and related resources.
 #>
@@ -61,7 +61,7 @@ param(
     [string]$ApplianceImageOffer = 'WindowsServer',
 
     [Parameter()]
-    [string]$ApplianceImageSku = '2022-datacenter-azure-edition',
+    [string]$ApplianceImageSku = '2025-datacenter-azure-edition',
 
     [Parameter()]
     [string]$ApplianceImageVersion = 'latest',
@@ -412,7 +412,7 @@ $inboundObject = Wait-ArmProvisioning -Path $inboundPath
 $dnsInboundIp = $inboundObject.properties.ipConfigurations[0].privateIpAddress
 
 if ($DeployApplianceVM) {
-    Write-Step 'Creating the Windows Server 2022 Azure Migrate appliance VM'
+    Write-Step "Creating the Windows Server appliance VM ($ApplianceImageSku)"
     $vm = Get-AzVM -Name $ApplianceVmName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
     if (-not $vm) {
         $credential = Get-Credential -UserName $AdminUsername -Message "Enter a strong local administrator password for $ApplianceVmName"
@@ -433,7 +433,7 @@ if ($DeployApplianceVM) {
             New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig | Out-Null
         } catch {
             if ($_.Exception.Message -match 'RequestDisallowedByPolicy|disallowed by policy') {
-                throw "Azure Policy blocked appliance VM '$ApplianceVmName' with image '$ApplianceImagePublisher/$ApplianceImageOffer/${ApplianceImageSku}:$ApplianceImageVersion'. Query the Restrict-WindowsServer2022image policy in Azure Portal or with Get-AzPolicyAssignment/Get-AzPolicyDefinition, then rerun with the approved -ApplianceImagePublisher, -ApplianceImageOffer, -ApplianceImageSku, and -ApplianceImageVersion values. The VNets and networking resources created earlier remain deployed."
+                throw "Azure Policy blocked appliance VM '$ApplianceVmName' with image '$ApplianceImagePublisher/$ApplianceImageOffer/${ApplianceImageSku}:$ApplianceImageVersion'. Query the applicable VM image policy assignment in Azure Portal or with Get-AzPolicyAssignment/Get-AzPolicyDefinition, then rerun with the approved -ApplianceImagePublisher, -ApplianceImageOffer, -ApplianceImageSku, and -ApplianceImageVersion values. The VNets and networking resources created earlier remain deployed."
             }
             throw
         }
