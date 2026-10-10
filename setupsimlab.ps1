@@ -55,6 +55,18 @@ param(
     [string]$ApplianceVmSize = 'Standard_D8s_v5',
 
     [Parameter()]
+    [string]$ApplianceImagePublisher = 'MicrosoftWindowsServer',
+
+    [Parameter()]
+    [string]$ApplianceImageOffer = 'WindowsServer',
+
+    [Parameter()]
+    [string]$ApplianceImageSku = '2022-datacenter-azure-edition',
+
+    [Parameter()]
+    [string]$ApplianceImageVersion = 'latest',
+
+    [Parameter()]
     [string]$AdminUsername = 'azureadmin',
 
     [Parameter()]
@@ -414,10 +426,17 @@ if ($DeployApplianceVM) {
 
         $vmConfig = New-AzVMConfig -VMName $ApplianceVmName -VMSize $ApplianceVmSize
         $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName $ApplianceVmName -Credential $credential -ProvisionVMAgent -EnableAutoUpdate
-        $vmConfig = Set-AzVMSourceImage -VM $vmConfig -PublisherName 'MicrosoftWindowsServer' -Offer 'WindowsServer' -Skus '2022-datacenter-azure-edition' -Version 'latest'
+        $vmConfig = Set-AzVMSourceImage -VM $vmConfig -PublisherName $ApplianceImagePublisher -Offer $ApplianceImageOffer -Skus $ApplianceImageSku -Version $ApplianceImageVersion
         $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $nic.Id -Primary
         $vmConfig = Set-AzVMOSDisk -VM $vmConfig -Name $osDiskName -CreateOption FromImage -StorageAccountType Premium_LRS -DiskSizeInGB 128
-        New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig | Out-Null
+        try {
+            New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig | Out-Null
+        } catch {
+            if ($_.Exception.Message -match 'RequestDisallowedByPolicy|disallowed by policy') {
+                throw "Azure Policy blocked appliance VM '$ApplianceVmName' with image '$ApplianceImagePublisher/$ApplianceImageOffer/${ApplianceImageSku}:$ApplianceImageVersion'. Query the Restrict-WindowsServer2022image policy in Azure Portal or with Get-AzPolicyAssignment/Get-AzPolicyDefinition, then rerun with the approved -ApplianceImagePublisher, -ApplianceImageOffer, -ApplianceImageSku, and -ApplianceImageVersion values. The VNets and networking resources created earlier remain deployed."
+            }
+            throw
+        }
     } else {
         Write-Host "VM '$ApplianceVmName' already exists; no changes were made to it." -ForegroundColor Yellow
     }
