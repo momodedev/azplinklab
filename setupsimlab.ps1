@@ -134,7 +134,7 @@ function Invoke-ArmPut {
         [Parameter(Mandatory)][hashtable]$Body
     )
     $json = $Body | ConvertTo-Json -Depth 20 -Compress
-    $response = Invoke-AzRestMethod -Method PUT -Path $Path -Payload $json
+    $response = Invoke-AzRestMethod -Method PUT -Path $Path -Payload $json -WaitForCompletion
     if ($response.StatusCode -notin 200, 201, 202) {
         throw "ARM PUT failed. StatusCode=$($response.StatusCode), Path=$Path, Content=$($response.Content)"
     }
@@ -149,6 +149,10 @@ function Wait-ArmProvisioning {
     )
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         $r = Invoke-AzRestMethod -Method GET -Path $Path
+        if ($r.StatusCode -eq 404 -and $attempt -lt $MaxAttempts) {
+            Start-Sleep -Seconds $DelaySeconds
+            continue
+        }
         if ($r.StatusCode -ne 200) {
             throw "ARM GET failed. StatusCode=$($r.StatusCode), Path=$Path, Content=$($r.Content)"
         }
@@ -158,7 +162,7 @@ function Wait-ArmProvisioning {
         if ($state -eq 'Failed') { throw "Resource provisioning failed: $Path" }
         Start-Sleep -Seconds $DelaySeconds
     }
-    throw "Timed out waiting for resource provisioning: $Path"
+    throw "Timed out waiting for resource provisioning or resource visibility: $Path"
 }
 
 Write-Step 'Loading Azure PowerShell modules'
