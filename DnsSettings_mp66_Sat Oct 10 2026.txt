@@ -1,0 +1,12 @@
+10.30.1.4	034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com
+
+10.30.1.6	3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com
+
+10.30.1.13	618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com
+
+10.30.1.12	5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com
+
+10.30.1.7	mp661572kv.vault.azure.net
+
+10.30.1.5	mp665518usa.blob.core.windows.net
+

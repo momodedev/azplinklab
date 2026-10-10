@@ -1,0 +1,2464 @@
+User: Review the code in detail and make sure it work very well
+
+GitHub Copilot: I’ll review the PowerShell setup script for correctness and macOS compatibility, then make targeted fixes and run the strongest checks available locally. First I’m reading the script and checking whether PowerShell tooling is installed so the review stays grounded in what can actually be executed.
+
+Ran terminal command:  command -v pwsh; command -v powershell; git status --short
+
+Read , lines 1 to 280
+
+The script’s first half already shows a likely reliability issue: existing VNets are only partially reconciled, so reruns may leave subnet configuration drift; I’m checking the remaining deployment flow to see whether that pattern affects the VM and DNS resources too. This folder is not a Git repository, and neither PowerShell executable was found on the initial check, so I’ll use static checks unless the follow-up confirms otherwise.
+
+Ran terminal command:  command -v pwsh || true; command -v powershell || true; ls -la
+
+Read , lines 281 to 397
+
+The deployment flow confirms three concrete correctness gaps: `-WhatIf` currently does not prevent Azure changes, subnet validation checks overlap instead of full containment, and provider registration proceeds without waiting for completion. I’m going to fix those first, plus make the existing-VNet subnet handling consistently reconcile both DNS subnet settings; then I’ll do static consistency checks, since `pwsh` is unavailable here.
+
+Created 3 todos
+
+Generating patch (116 lines) in 
+
+Generating patch (91 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+The first focused check reports no editor diagnostics, though it is not a PowerShell parser run. The main edits landed; I’m tightening CIDR canonicalization next, then I’ll do a static review of the final touched paths and explicitly note the remaining validation limit.
+
+Starting: *Reconcile subnet and provider state* (2/3)
+
+Read , lines 48 to 220
+
+The static read confirms the CIDR parser still accepts host addresses as network prefixes, which can make containment checks pass against a range Azure may reject. I’m making the parser strict about IPv4 octets, canonical network addresses, and subnet-prefix depth so bad inputs fail before any resources are touched.
+
+Generating patch (32 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+One important security behavior emerged in the review: Azure’s default `AllowVNetInBound` rule also includes peered VNets, so the current NSG’s “only from simulated on-prem” RDP description is not true. I’m adding explicit deny rules after the intended source-specific allows, including when rerunning against an already-created NSG.
+
+Generating patch (23 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+Ran terminal command:  awk 'BEGIN { open=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") open++; if (c=="}") open--; if (open<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (open!=0) { print "Unbalanced braces: " open; exit 1 } else { print "Brace count balanced" } }' setupsimlab.ps1; rg -n "Test-CidrContains|Deny-Appliance|Deny-RDP|RegistrationState|ShouldProcess|Zone 1,2,3" setupsimlab.ps1
+
+The core safety fixes are now in place, and the editor still reports no diagnostics. A local structural check also finds balanced braces; this machine lacks both `pwsh` and `rg`, so I’m doing the last review with available shell tools and checking that the rerun path can’t silently leave the intended inbound rules absent.
+
+Ran terminal command:  grep -nE 'ShouldProcess|Get-CidrRange|Test-CidrContained|Register-AzResourceProvider|Deny-Appliance|Deny-RDP|dnsInboundSubnetName|Zone 1,2,3' setupsimlab.ps1; command -v pwsh || true; command -v powershell || true
+
+Read , lines 55 to 250
+
+The rerun audit found one more concrete bug: if the named NSG already exists without the allow rules, the current branch adds only denies and leaves the appliance inaccessible on its intended ports. I’m updating that branch to reconcile all four named rules and reject priority conflicts clearly, then I’ll finish with static validation.
+
+Generating patch (45 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+Ran terminal command:  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|function Test-Cidr|function Get-CidrRange|desiredRules|priorityConflict|RegistrationState|Test-CidrContained|PrivateEndpointNetworkPoliciesFlag|Set-AzVirtualNetworkSubnetConfig' setupsimlab.ps1
+
+Checked , no problems found
+
+The existing-NSG path now brings both allows and denies to the intended settings, and it reports priority collisions rather than failing later with an opaque Azure error. Final checks show balanced braces and no editor diagnostics; I can’t claim a PowerShell runtime test because `pwsh`/Windows PowerShell are not installed in this environment.
+
+Completed: *Reconcile subnet and provider state* (2/3)
+
+I spotted one remaining ordering issue while closing out: invalid CIDRs are currently detected only after Azure resource providers may have been registered. I’m moving that local-only validation ahead of provider registration so malformed input cannot cause even that preliminary subscription-side change.
+
+Generating patch (42 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+Ran terminal command:  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|Validating address spaces|Registering required resource providers|function Get-CidrRange|desiredRules|Timed out waiting for resource provider' setupsimlab.ps1
+
+The final edge-case pass caught a subtle rerun problem in the priority-conflict check: an existing named rule with an outdated priority could be mistaken for an unrelated conflict before the script gets a chance to correct it. I’m adjusting the check to ignore all four rules the script owns while still rejecting collisions with custom rules.
+
+Generating patch (20 lines) in 
+
+
+```
+
+```
+
+
+Checked , no problems found
+
+Ran terminal command:  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|Validating address spaces|Registering required resource providers|managedRuleNames|Set-AzNetworkSecurityRuleConfig|Test-CidrContained' setupsimlab.ps1; command -v pwsh || true
+
+**Review Findings**
+- CIDR checks previously accepted subnet ranges that only partially overlapped a VNet, and could accept malformed or host-address CIDRs. The parser now requires canonical IPv4 network CIDRs and checks full subnet containment in `setupsimlab.ps1:87`.
+- Existing NSGs could leave the appliance without its intended allow rules on reruns. The script now reconciles all four managed rules and detects collisions with their reserved priorities in `setupsimlab.ps1:242`.
+- The NSG’s “only from simulated on-premises” management-port rules could be bypassed by Azure’s default peered-VNet inbound allow. Explicit deny rules now follow the intended source-specific allows.
+- Provider registration could still be in progress when deployment continued. The script now waits for registration, and validates address spaces before attempting registration in `setupsimlab.ps1:185`.
+- Existing DNS inbound subnets are now reconciled with the expected delegation and address prefix.
+
+**Validation**
+VS Code reports no errors, and the script passes a brace-balance check. I could not run PowerShell parsing, PSScriptAnalyzer, or an Azure deployment because `pwsh`/Windows PowerShell and Azure access are unavailable in this environment, so the Az cmdlet behavior still needs a runtime check.
+
+Made changes.
+
+User: To setup PSScriptAnalyzer and pwsh /Windows PowerShell and Azure Access in current environment, and make sure it work very well
+
+GitHub Copilot: I’ll set up native PowerShell 7 on this macOS machine, install PSScriptAnalyzer and the script’s Az modules, then run analysis and a non-mutating Azure connectivity check. Windows PowerShell 5.1 itself is Windows-only, so I’ll use cross-platform `pwsh`; Azure sign-in may need you to complete an interactive browser/device prompt.
+
+Ran terminal command:  uname -s; command -v brew || true; command -v pwsh || true; command -v powershell || true; command -v dotnet || true; command -v az || true; git status --short -- setupsimlab.ps1
+
+Read , lines 1 to 110
+
+Read memory
+
+There’s no Homebrew, `pwsh`, legacy `powershell`, .NET, or Azure CLI currently available, and this folder isn’t a Git checkout. I’ll avoid requiring administrator privileges: the best route is the official portable PowerShell release under your home directory, followed by CurrentUser-scoped PowerShell modules.
+
+Ran terminal command:  uname -m; command -v curl || true; command -v tar || true; command -v xattr || true; command -v python3 || true; ls -ld "$HOME/.local" "$HOME/.local/bin" 2>/dev/null || true; curl -I -L --max-time 20 https://github.com/PowerShell/PowerShell/releases/latest
+
+Read , lines 1 to 80
+
+GitHub is reachable, and this is Intel macOS. The official PowerShell release currently resolves to 7.6.6; I’m installing its signed upstream macOS archive into `~/.local/share` and creating a user-local executable link, with no system package manager or admin access involved.
+
+Ran terminal command:  mkdir -p "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" && curl -fL --retry 3 --output /tmp/powershell-7.6.6-osx-x64.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz && tar -xzf /tmp/powershell-7.6.6-osx-x64.tar.gz -C "$HOME/.local/share/powershell/7.6.6" && chmod +x "$HOME/.local/share/powershell/7.6.6/pwsh" && xattr -dr com.apple.quarantine "$HOME/.local/share/powershell/7.6.6" 2>/dev/null || true; ln -sf "$HOME/.local/share/powershell/7.6.6/pwsh" "$HOME/.local/bin/pwsh"; "$HOME/.local/bin/pwsh" -NoLogo -NoProfile -Command '$PSVersionTable | Format-List PSVersion, PSEdition, Platform, OS'
+
+Checked terminal output
+
+The release download is reachable but extremely throttled, under about 35 KB/s for a 71 MB archive, which would take roughly 40 minutes; it hasn’t completed. I’m stopping that transfer and checking Microsoft’s package feed as an alternative source before deciding whether this can be finished efficiently here.
+
+Sent `` to terminal
+
+User: [Terminal 898f4948-f58e-4951-aac4-d58ab083b184 notification: command completed with exit code 130. The terminal has been cleaned up.]
+Terminal output:
+mac@MacBook-Pro lab %  command -v pwsh; command -v powershell; git status --short
+fatal: not a git repository (or any of the parent directories): .git
+mac@MacBook-Pro lab %  command -v pwsh || true; command -v powershell || true; ls -la
+total 40
+drwxr-xr-x@  3 mac  staff     96 Oct 10 11:47 .
+drwx------+ 33 mac  staff   1056 Oct 10 11:47 ..
+-rw-r--r--@  1 mac  staff  19085 Oct 10 11:45 setupsimlab.ps1
+mac@MacBook-Pro lab %  awk 'BEGIN { open=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") open++; if (c=="}") open--; if (open<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (open!=0) { print "Unbalanced braces: " open; exit 1 } else { print "Brace count balanced" } }' setupsimlab.ps1; rg -n "Test-CidrContains|Deny-Appliance|Deny-RDP|RegistrationState|ShouldProcess|Zone 1,2,3" setupsimlab.ps1
+Brace count balanced
+zsh: command not found: rg
+mac@MacBook-Pro lab %  grep -nE 'ShouldProcess|Get-CidrRange|Test-CidrContained|Register-AzResourceProvider|Deny-Appliance|Deny-RDP|dnsInboundSubnetName|Zone 1,2,3' setupsimlab.ps1; command -v pwsh || true; command -v powershell || true
+19:[CmdletBinding(SupportsShouldProcess = $true)]
+67:if (-not $PSCmdlet.ShouldProcess("subscription '$SubscriptionId', resource group '$ResourceGroupName'", 'Deploy Azure Migrate lab infrastructure')) {
+87:function Get-CidrRange {
+112:    $r1 = Get-CidrRange $Cidr1
+113:    $r2 = Get-CidrRange $Cidr2
+123:    $parent = Get-CidrRange $ParentCidr
+124:    $child = Get-CidrRange $ChildCidr
+197:        Register-AzResourceProvider -ProviderNamespace $provider | Out-Null
+230:$dnsInboundSubnetName = 'snet-dns-inbound'
+244:    $deny44368 = New-AzNetworkSecurityRuleConfig -Name 'Deny-Appliance-Config-44368-Other' -Description 'Deny appliance configuration manager from all other sources' -Access Deny -Protocol Tcp -Direction Inbound -Priority 130 -SourceAddressPrefix '*' -SourcePortRange '*' -DestinationAddressPrefix '*' -DestinationPortRange 44368
+245:    $denyRdp = New-AzNetworkSecurityRuleConfig -Name 'Deny-RDP-Other' -Description 'Deny RDP from all other sources' -Access Deny -Protocol Tcp -Direction Inbound -Priority 140 -SourceAddressPrefix '*' -SourcePortRange '*' -DestinationAddressPrefix '*' -DestinationPortRange 3389
+248:    $deny44368 = $nsg.SecurityRules | Where-Object Name -eq 'Deny-Appliance-Config-44368-Other'
+250:        Add-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $nsg -Name 'Deny-Appliance-Config-44368-Other' -Description 'Deny appliance configuration manager from all other sources' -Access Deny -Protocol Tcp -Direction Inbound -Priority 130 -SourceAddressPrefix '*' -SourcePortRange '*' -DestinationAddressPrefix '*' -DestinationPortRange 44368 | Out-Null
+252:    $denyRdp = $nsg.SecurityRules | Where-Object Name -eq 'Deny-RDP-Other'
+254:        Add-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $nsg -Name 'Deny-RDP-Other' -Description 'Deny RDP from all other sources' -Access Deny -Protocol Tcp -Direction Inbound -Priority 140 -SourceAddressPrefix '*' -SourcePortRange '*' -DestinationAddressPrefix '*' -DestinationPortRange 3389 | Out-Null
+292:    Add-AzVirtualNetworkSubnetConfig -Name $dnsInboundSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $DnsInboundSubnetPrefix -Delegation $dnsDelegation | Out-Null
+301:    $dnsSubnet = $migrateVnet.Subnets | Where-Object Name -eq $dnsInboundSubnetName
+303:        Add-AzVirtualNetworkSubnetConfig -Name $dnsInboundSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $DnsInboundSubnetPrefix -Delegation $dnsDelegation | Out-Null
+305:        Set-AzVirtualNetworkSubnetConfig -Name $dnsInboundSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $DnsInboundSubnetPrefix -Delegation $dnsDelegation | Out-Null
+341:$dnsSubnet = $migrateVnet.Subnets | Where-Object Name -eq $dnsInboundSubnetName
+mac@MacBook-Pro lab %  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|function Test-Cidr|function Get-CidrRange|desiredRules|priorityConflict|RegistrationState|Test-CidrContained|PrivateEndpointNetworkPoliciesFlag|Set-AzVirtualNetworkSubnetConfig' setupsimlab.ps1
+Brace count balanced
+19:[CmdletBinding(SupportsShouldProcess = $true)]
+67:if (-not $PSCmdlet.ShouldProcess("subscription '$SubscriptionId', resource group '$ResourceGroupName'", 'Deploy Azure Migrate lab infrastructure')) {
+87:function Get-CidrRange {
+106:function Test-CidrOverlap {
+117:function Test-CidrContains {
+196:    if (-not $registration -or $registration.RegistrationState -ne 'Registered') {
+203:        } while ($registration.RegistrationState -ne 'Registered' -and $attempt -lt 60)
+204:        if ($registration.RegistrationState -ne 'Registered') {
+205:            throw "Timed out waiting for resource provider '$provider' to register. Current state: $($registration.RegistrationState)"
+248:    $desiredRules = @(
+254:    foreach ($rule in $desiredRules) {
+256:        $priorityConflict = $nsg.SecurityRules | Where-Object { $_.Name -ne $rule.Name -and $_.Priority -eq $rule.Priority }
+257:        if ($priorityConflict) {
+258:            throw "Cannot reconcile NSG '$nsgName': priority $($rule.Priority) is already used by rule '$($priorityConflict.Name)'."
+303:        Set-AzVirtualNetworkSubnetConfig -Name $applianceSubnetName -VirtualNetwork $simVnet -AddressPrefix $ApplianceSubnetPrefix -NetworkSecurityGroup $nsg -NatGateway $natGateway | Out-Null
+314:    Add-AzVirtualNetworkSubnetConfig -Name $privateEndpointSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $PrivateEndpointSubnetPrefix -PrivateEndpointNetworkPoliciesFlag Disabled | Out-Null
+320:        Add-AzVirtualNetworkSubnetConfig -Name $privateEndpointSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $PrivateEndpointSubnetPrefix -PrivateEndpointNetworkPoliciesFlag Disabled | Out-Null
+322:        Set-AzVirtualNetworkSubnetConfig -Name $privateEndpointSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $PrivateEndpointSubnetPrefix -PrivateEndpointNetworkPoliciesFlag Disabled | Out-Null
+328:        Set-AzVirtualNetworkSubnetConfig -Name $dnsInboundSubnetName -VirtualNetwork $migrateVnet -AddressPrefix $DnsInboundSubnetPrefix -Delegation $dnsDelegation | Out-Null
+mac@MacBook-Pro lab %  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|Validating address spaces|Registering required resource providers|function Get-CidrRange|desiredRules|Timed out waiting for resource provider' setupsimlab.ps1
+Brace count balanced
+19:[CmdletBinding(SupportsShouldProcess = $true)]
+67:if (-not $PSCmdlet.ShouldProcess("subscription '$SubscriptionId', resource group '$ResourceGroupName'", 'Deploy Azure Migrate lab infrastructure')) {
+87:function Get-CidrRange {
+185:Write-Step 'Validating address spaces'
+201:Write-Step 'Registering required resource providers'
+221:            throw "Timed out waiting for resource provider '$provider' to register. Current state: $($registration.RegistrationState)"
+248:    $desiredRules = @(
+254:    foreach ($rule in $desiredRules) {
+mac@MacBook-Pro lab %  awk 'BEGIN { n=0 } { for (i=1; i<=length($0); i++) { c=substr($0,i,1); if (c=="{") n++; if (c=="}") n--; if (n<0) { print "Unmatched closing brace at line " NR; exit 1 } } } END { if (n!=0) { print "Unbalanced braces: " n; exit 1 } print "Brace count balanced" }' setupsimlab.ps1; grep -nE 'ShouldProcess|Validating address spaces|Registering required resource providers|managedRuleNames|Set-AzNetworkSecurityRuleConfig|Test-CidrContained' setupsimlab.ps1; command -v pwsh || true
+Brace count balanced
+19:[CmdletBinding(SupportsShouldProcess = $true)]
+67:if (-not $PSCmdlet.ShouldProcess("subscription '$SubscriptionId', resource group '$ResourceGroupName'", 'Deploy Azure Migrate lab infrastructure')) {
+185:Write-Step 'Validating address spaces'
+201:Write-Step 'Registering required resource providers'
+254:    $managedRuleNames = @($desiredRules | ForEach-Object Name)
+256:    $priorityConflict = $nsg.SecurityRules | Where-Object { $_.Name -notin $managedRuleNames -and $_.Priority -in $managedPriorities } | Select-Object -First 1
+276:            Set-AzNetworkSecurityRuleConfig @ruleParameters | Out-Null
+mac@MacBook-Pro lab %  uname -s; command -v brew || true; command -v pwsh || true; command -v powershell || true; command -v dotnet || true; command -v az || true; git status --short -- setupsimlab.ps1
+Darwin
+fatal: not a git repository (or any of the parent directories): .git
+mac@MacBook-Pro lab %  uname -m; command -v curl || true; command -v tar || true; command -v xattr || true; command -v python3 || true; ls -ld "$HOME/.local" "$HOME/.local/bin" 2>/dev/null || true; curl -I -L --max-time 20 https://github.com/PowerShell/PowerShell/releases/latest
+x86_64
+/usr/bin/curl
+/usr/bin/tar
+/usr/bin/xattr
+/usr/bin/python3
+HTTP/2 302 
+date: Sat, 10 Oct 2026 04:17:24 GMT
+content-type: text/html; charset=utf-8
+location: https://github.com/PowerShell/PowerShell/releases/tag/v7.6.6
+vary: X-PJAX, X-PJAX-Container, Turbo-Visit, Turbo-Frame, X-Requested-With, X-GitHub-Client-Version, Sec-Fetch-Site,Accept-Encoding, Accept, X-Requested-With
+cache-control: no-cache
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: no-referrer-when-downgrade
+content-security-policy: default-src 'none'; base-uri 'self'; child-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/; connect-src 'self' uploads.github.com [www.githubstatus.com](http://www.githubstatus.com) collector.github.com raw.githubusercontent.com api.github.com github-cloud.s3.amazonaws.com github-production-repository-file-5c1aeb.s3.amazonaws.com github-production-upload-manifest-file-7fdce7.s3.amazonaws.com github-production-user-asset-6210df.s3.amazonaws.com *.rel.tunnels.api.visualstudio.com wss://*.rel.tunnels.api.visualstudio.com github.githubassets.com objects-origin.githubusercontent.com copilot-proxy.githubusercontent.com proxy.individual.githubcopilot.com proxy.business.githubcopilot.com proxy.enterprise.githubcopilot.com *.actions.githubusercontent.com wss://*.actions.githubusercontent.com productionresultssa0.blob.core.windows.net productionresultssa1.blob.core.windows.net productionresultssa2.blob.core.windows.net productionresultssa3.blob.core.windows.net productionresultssa4.blob.core.windows.net productionresultssa5.blob.core.windows.net productionresultssa6.blob.core.windows.net productionresultssa7.blob.core.windows.net productionresultssa8.blob.core.windows.net productionresultssa9.blob.core.windows.net productionresultssa10.blob.core.windows.net productionresultssa11.blob.core.windows.net productionresultssa12.blob.core.windows.net productionresultssa13.blob.core.windows.net productionresultssa14.blob.core.windows.net productionresultssa15.blob.core.windows.net productionresultssa16.blob.core.windows.net productionresultssa17.blob.core.windows.net productionresultssa18.blob.core.windows.net productionresultssa19.blob.core.windows.net github-production-repository-image-32fea6.s3.amazonaws.com github-production-release-asset-2e65be.s3.amazonaws.com insights.github.com wss://alive.github.com wss://alive-staging.github.com api.githubcopilot.com api.individual.githubcopilot.com api.business.githubcopilot.com api.enterprise.githubcopilot.com wss://production-copilot-host.webpubsub.azure.com api.github.com/cmc_internal/api/; font-src github.githubassets.com; form-action 'self' github.com gist.github.com copilot-workspace.githubnext.com objects-origin.githubusercontent.com; frame-ancestors 'none'; frame-src viewscreen.githubusercontent.com notebooks.githubusercontent.com; img-src 'self' data: blob: github.githubassets.com media.githubusercontent.com camo.githubusercontent.com identicons.github.com avatars.githubusercontent.com private-avatars.githubusercontent.com github-cloud.s3.amazonaws.com objects.githubusercontent.com release-assets.githubusercontent.com secured-user-images.githubusercontent.com user-images.githubusercontent.com private-user-images.githubusercontent.com opengraph.githubassets.com repository-images.githubusercontent.com marketplace-screenshots.githubusercontent.com copilotprodattachments.blob.core.windows.net/github-production-copilot-attachments/ github-production-user-asset-6210df.s3.amazonaws.com customer-stories-feed.github.com spotlights-feed.github.com explore-feed.github.com *.googleusercontent.com objects-origin.githubusercontent.com *.githubusercontent.com; manifest-src 'self'; media-src github.com user-images.githubusercontent.com secured-user-images.githubusercontent.com private-user-images.githubusercontent.com github-production-user-asset-6210df.s3.amazonaws.com gist.github.com github.githubassets.com; script-src github.githubassets.com; style-src 'unsafe-inline' github.githubassets.com; upgrade-insecure-requests; worker-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/
+server: github.com
+set-cookie: _gh_sess=Aoqb0i3fgEBoayr0nc1633Fa%2FwUI5DAKA9ZdqSmbeY%2BhDvZqgqhDgxQLKqkCpPwOnXZMbVgt99CPcyMoFBwsNqQziSsUjeVTI9yx1sLithjqX4FKt368w3yYisXclVRDT63%2FXZC%2BSUBlaQp8041zrWdCupIxgmEURl4w2OPxt8vD38K3AXCIA%2B1QF51HWxsNQNMAiplUpVSd%2FjB9xpkPo3h%2FDFOgFZh5D0GgVfaF4QEVZSIwgBV%2BGh%2BWyvqE26mmerWNZap98fNQ2xlc3DxFjg%3D%3D--cErzhqD7n0hkqkcA--2WtiO6Z7o41YZFRyfiGhEA%3D%3D; path=/; HttpOnly; secure; SameSite=Lax
+set-cookie: _octo=GH1.1.1160684177.1791605843; expires=Sun, 10 Oct 2027 04:17:23 GMT; domain=.github.com; path=/; secure; SameSite=Lax
+set-cookie: logged_in=no; expires=Sun, 10 Oct 2027 04:17:23 GMT; domain=.github.com; path=/; HttpOnly; secure; SameSite=Lax
+content-length: 0
+x-github-request-id: 5AD3:203FD:F91557:18CF16F:6AC9BC53
+x-github-edge-region: southeastasia
+
+HTTP/2 200 
+date: Sat, 10 Oct 2026 04:17:24 GMT
+content-type: text/html; charset=utf-8
+vary: X-PJAX, X-PJAX-Container, Turbo-Visit, Turbo-Frame, X-Requested-With, X-GitHub-Client-Version, Sec-Fetch-Site,Accept-Encoding, Accept, X-Requested-With
+etag: W/"9cc06ff75a0030d638ef877a10837baf"
+cache-control: max-age=0, private, must-revalidate
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: no-referrer-when-downgrade
+content-security-policy: default-src 'none'; base-uri 'self'; child-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/; connect-src 'self' uploads.github.com [www.githubstatus.com](http://www.githubstatus.com) collector.github.com raw.githubusercontent.com api.github.com github-cloud.s3.amazonaws.com github-production-repository-file-5c1aeb.s3.amazonaws.com github-production-upload-manifest-file-7fdce7.s3.amazonaws.com github-production-user-asset-6210df.s3.amazonaws.com *.rel.tunnels.api.visualstudio.com wss://*.rel.tunnels.api.visualstudio.com github.githubassets.com objects-origin.githubusercontent.com copilot-proxy.githubusercontent.com proxy.individual.githubcopilot.com proxy.business.githubcopilot.com proxy.enterprise.githubcopilot.com *.actions.githubusercontent.com wss://*.actions.githubusercontent.com productionresultssa0.blob.core.windows.net productionresultssa1.blob.core.windows.net productionresultssa2.blob.core.windows.net productionresultssa3.blob.core.windows.net productionresultssa4.blob.core.windows.net productionresultssa5.blob.core.windows.net productionresultssa6.blob.core.windows.net productionresultssa7.blob.core.windows.net productionresultssa8.blob.core.windows.net productionresultssa9.blob.core.windows.net productionresultssa10.blob.core.windows.net productionresultssa11.blob.core.windows.net productionresultssa12.blob.core.windows.net productionresultssa13.blob.core.windows.net productionresultssa14.blob.core.windows.net productionresultssa15.blob.core.windows.net productionresultssa16.blob.core.windows.net productionresultssa17.blob.core.windows.net productionresultssa18.blob.core.windows.net productionresultssa19.blob.core.windows.net github-production-repository-image-32fea6.s3.amazonaws.com github-production-release-asset-2e65be.s3.amazonaws.com insights.github.com wss://alive.github.com wss://alive-staging.github.com api.githubcopilot.com api.individual.githubcopilot.com api.business.githubcopilot.com api.enterprise.githubcopilot.com wss://production-copilot-host.webpubsub.azure.com api.github.com/cmc_internal/api/; font-src github.githubassets.com; form-action 'self' github.com gist.github.com copilot-workspace.githubnext.com objects-origin.githubusercontent.com; frame-ancestors 'none'; frame-src viewscreen.githubusercontent.com notebooks.githubusercontent.com; img-src 'self' data: blob: github.githubassets.com media.githubusercontent.com camo.githubusercontent.com identicons.github.com avatars.githubusercontent.com private-avatars.githubusercontent.com github-cloud.s3.amazonaws.com objects.githubusercontent.com release-assets.githubusercontent.com secured-user-images.githubusercontent.com user-images.githubusercontent.com private-user-images.githubusercontent.com opengraph.githubassets.com repository-images.githubusercontent.com marketplace-screenshots.githubusercontent.com copilotprodattachments.blob.core.windows.net/github-production-copilot-attachments/ github-production-user-asset-6210df.s3.amazonaws.com customer-stories-feed.github.com spotlights-feed.github.com explore-feed.github.com *.googleusercontent.com objects-origin.githubusercontent.com *.githubusercontent.com; manifest-src 'self'; media-src github.com user-images.githubusercontent.com secured-user-images.githubusercontent.com private-user-images.githubusercontent.com github-production-user-asset-6210df.s3.amazonaws.com gist.github.com github.githubassets.com; script-src github.githubassets.com 'sha256-tSjmyPUky1KbRZ0fw9VUil3wFEbeM82rtbJDygGJAXw='; style-src 'unsafe-inline' github.githubassets.com; upgrade-insecure-requests; worker-src github.githubassets.com github.com/assets-cdn/worker/ github.com/assets/ gist.github.com/assets-cdn/worker/
+server: github.com
+accept-ranges: bytes
+set-cookie: _gh_sess=MH2MKyEZaCBq5IXkxMb6fffR8bAQX%2F%2F4tZBJDaFOBT%2Bn4vlQDGRf3KbKNPp7iJcVWqMfRlMAaZzX4seKGTDVMJbuN7190q%2B9qcbvBPonapoKcdP%2BVBVIHAq1zPaWuWnvbwkH55CqkUc9J8cADi7PS4STyMLSSNnGN1qgA4cKUygnM2vXirsJyIFJmXXPNsSYZ4HwCdRCPgMizlcfNkNMgf7iBymJOxD18Gwz6a5p%2FB0DnJRGceCFFgewzCkGCzHuxDPQh1l4sLm7K5B%2Fsz7uHw%3D%3D--ux%2BQEp%2BjpgqQH3k1--xhSivSO1P9uPg4q8iiuBeQ%3D%3D; path=/; HttpOnly; secure; SameSite=Lax
+set-cookie: _octo=GH1.1.1746834762.1791605844; expires=Sun, 10 Oct 2027 04:17:24 GMT; domain=.github.com; path=/; secure; SameSite=Lax
+set-cookie: logged_in=no; expires=Sun, 10 Oct 2027 04:17:24 GMT; domain=.github.com; path=/; HttpOnly; secure; SameSite=Lax
+x-github-request-id: 5AD3:203FD:F91633:18CF2AB:6AC9BC53
+x-github-edge-region: southeastasia
+
+mac@MacBook-Pro lab %  mkdir -p "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" && curl -fL --retry 3 --output /tmp/powershell-7.6.6-osx-x64.tar.gz https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz && tar -xzf /tmp/powershell-7.6.6-osx-x64.tar.gz -C "$HOME/.local/share/powershell/7.6.6" && chmod +x "$HOME/.local/share/powershell/7.6.6/pwsh" && xattr -dr com.apple.quarantine "$HOME/.local/share/powershell/7.6.6" 2>/dev/null || true; ln -sf "$HOME/.local/share/powershell/7.6.6/pwsh" "$HOME/.local/bin/pwsh"; "$HOME/.local/bin/pwsh" -NoLogo -NoProfile -Command '$PSVersionTable | Format-List PSVersion, PSEdition, Platform, OS'
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+  9 71.2M    9 7132k    0     0  26548      0  0:46:52  0:04:35  0:42:17 30712^C
+
+                                                                                
+
+GitHub Copilot: The slow transfer was interrupted cleanly before installation; it did not alter the script or install partial PowerShell files. I’m testing the release asset’s direct CDN endpoint and range support, which may let me complete the same official download more efficiently; Azure authentication and module installs come after a verified `pwsh` launch.
+
+Ran terminal command:  curl -sS -L -o /dev/null -w 'asset_url=%{url_effective}\nhttp=%{http_code}\n' --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz; curl -sS -L -r 0-1023 -o /dev/null -w 'range_http=%{http_code} bytes=%{size_download} speed=%{speed_download}\n' --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz
+
+
+
+Fetched https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-macos
+
+Microsoft’s current instructions confirm a notarized, signed macOS PKG is the preferred route, and PowerShell 7.6.6 is the current LTS release. It is still hosted on GitHub, but the PKG may be smaller and installs cleanly; I’m checking its size before making one more bounded install attempt.
+
+Ran terminal command:  curl -sS -I -L --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg | tr -d '\r' | grep -iE 'HTTP/|content-length|location|accept-ranges'; ls -lh /tmp/powershell-7.6.6-osx-x64.tar.gz 2>/dev/null || true; ls -ld "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" 2>/dev/null || true
+
+Ran terminal command:  curl -sS -D - -o /dev/null --max-redirs 0 --max-time 20 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg | tr -d '\r' | grep -iE '^HTTP/|^location:|^content-length:'
+
+The signed package is redirected to GitHub’s release-assets storage, and I can query that redirect without downloading or exposing its temporary URL. I’m testing a tiny ranged fetch directly from that storage host; this will tell us whether the bottleneck is GitHub’s frontend or the underlying asset delivery.
+
+Ran terminal command:  asset_url=$(curl -sS -D - -o /dev/null --max-redirs 0 --max-time 20 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg 2>/dev/null | awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit }'); if [[ -z "$asset_url" ]]; then print 'Could not resolve signed asset URL'; exit 1; fi; curl -sS -L -r 0-1023 -o /dev/null -w 'http=%{http_code} bytes=%{size_download} speed=%{speed_download}\n' --max-time 30 "$asset_url"
+
+Direct release storage is even slower in this environment: a 1 KB test took several seconds, so downloading PowerShell, then the Az modules, would take an impractical amount of time. I’m removing only the partial archive I created and confirming nothing half-installed remains; Windows PowerShell 5.1 also cannot run natively on macOS, so the supported target here is PowerShell 7.
+
+Ran terminal command:  rm -f /tmp/powershell-7.6.6-osx-x64.tar.gz; ls -la "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" 2>/dev/null; command -v pwsh || true; command -v powershell || true; command -v brew || true; command -v dotnet || true
+
+Setup is blocked by download speed in this environment. The official PowerShell 7.6.6 release endpoint delivered only about 26–39 KB/s, and even a 1 KB test against its release-storage host was similarly slow. I stopped the transfer and removed the partial archive; no incomplete installation remains. PSScriptAnalyzer and the Az modules require `pwsh`, so I couldn’t install or run them.
+
+This machine is Intel macOS. Windows PowerShell 5.1 is Windows-only; PowerShell 7 is the appropriate supported runtime here. The current PowerShell directory is empty, and there is no Homebrew or .NET SDK available as an alternate installer.
+
+**Next step:** install PowerShell 7.6.6 using Microsoft’s signed [macOS x64 package](https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg) in Finder, where the download can resume or use your normal network. Then open a new terminal and run:
+
+```powershell
+Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force
+Connect-AzAccount
+Get-AzContext
+Invoke-ScriptAnalyzer -Path ./setupsimlab.ps1
+```
+
+I can continue with the analyzer output and verify Azure connectivity once `pwsh` is installed and sign-in is available.
+
+User: To setup PSScriptAnalyzer and pwsh /Windows PowerShell and Azure Access in current environment, and make sure it work very well
+
+GitHub Copilot: I’ll take another route-oriented pass before stopping: check whether this machine has a container runtime or an existing Windows/Azure Cloud Shell path that can run PowerShell without the large local download. If neither exists, I’ll leave the environment clean and give you the shortest install/sign-in path, since Azure credentials must be completed by you rather than handled here.
+
+Ran terminal command:  command -v docker || true; command -v podman || true; command -v colima || true; command -v vmrun || true; command -v az || true; command -v brew || true; command -v pkgutil || true; sw_vers; df -h "$HOME"
+
+Opened `Browser`
+
+There’s no Docker/Podman or Azure CLI, but VMware Fusion is installed, and the browser reached Azure’s sign-in flow for Cloud Shell. I’ll check whether the existing browser session is already authenticated; I won’t request or enter credentials on your behalf.
+
+Read `Browser`
+
+The browser is not signed into Azure, so Azure access requires your own Microsoft account and any MFA. I can’t complete that authentication without routing a secret through chat; I’m checking whether there’s an already-running Windows VM or another local runtime that avoids another large download, and then we’ll know whether the remaining step is user sign-in or environment installation.
+
+Ran terminal command:  "/Applications/VMware Fusion.app/Contents/Public/vmrun" list 2>&1; mdfind 'kMDItemFSName == "pwsh"c' | head -20; command -v port || true; command -v nix || true; command -v conda || true
+
+Navigated to https://shell.azure.com/ in `Browser`
+
+I couldn’t complete the installation in this environment. The official PowerShell download was severely throttled, so I stopped it and removed the partial archive. There is no existing `pwsh`, PowerShell 5.1, package manager, .NET SDK, or running Windows VM to use instead.
+
+The Azure Cloud Shell page is open in the browser, but it is at Microsoft’s sign-in screen. Azure credentials and MFA need to be entered directly by you; please don’t send them in chat.
+
+On this Intel Mac, the supported local runtime is PowerShell 7.6 LTS; Windows PowerShell 5.1 is Windows-only. Install the signed [Microsoft PowerShell 7.6.6 x64 package](https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg) using Finder. After installation, run these commands from the workspace:
+
+```powershell
+pwsh
+Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force
+Connect-AzAccount
+Get-AzContext
+Invoke-ScriptAnalyzer -Path ./setupsimlab.ps1
+```
+
+Once the runtime is installed and Azure sign-in is complete, I can run the analyzer and verify the selected subscription and Az modules. I did not run the deployment script; it creates and changes Azure resources.
+
+User: To setup PSScriptAnalyzer and pwsh /Windows PowerShell and Azure Access in current environment, and make sure it work very well
+
+GitHub Copilot: I’m checking whether your environment changed since the last attempt, because there’s no value in repeating the slow download if PowerShell or Azure sign-in is now available. I’ll proceed with setup only if a viable runtime or authenticated Cloud Shell session is present.
+
+Ran terminal command:  command -v pwsh || true; command -v powershell || true; command -v az || true; command -v brew || true; ls -l "$HOME/.local/bin/pwsh" "$HOME/.local/share/powershell/7.6.6/pwsh" 2>/dev/null || true; ls -la /Applications/VMware\ Fusion.app/Contents/Public/vmrun 2>/dev/null
+
+Read `Browser`
+
+Nothing has changed locally: `pwsh`, Windows PowerShell, Azure CLI, and Homebrew are still absent, and there was no running VM. I’m reopening Cloud Shell as the quickest viable route for PSScriptAnalyzer and Azure context; it will require you to authenticate directly in the browser before I can use it.
+
+Opened `Browser`
+
+I rechecked the environment: PowerShell and Azure CLI are still unavailable, and there’s no running Windows VM. I reopened Azure Cloud Shell, but it requires Microsoft sign-in. The official PowerShell download was too slow to finish earlier, so I stopped it and cleaned up the partial file.
+
+The setup is therefore **not complete**. On this Intel Mac, install PowerShell 7.6.6 using Microsoft’s [signed x64 package](https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg); Windows PowerShell 5.1 requires Windows. Then sign in at the Azure Cloud Shell page opened in the browser, or locally run `Connect-AzAccount` from `pwsh`. Enter credentials only in Microsoft’s sign-in UI, not in chat.
+
+After `pwsh` is available, install and check the modules:
+
+```powershell
+Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force
+Connect-AzAccount
+Get-AzContext
+Invoke-ScriptAnalyzer -Path ./setupsimlab.ps1
+```
+
+Once installation and sign-in are complete, I can verify the analyzer results and Azure context. I have not run the deployment script.
+
+User: PowerShell 7.6.6 has already installed, to run the below scripts to install and check the modules and make sure it is successfull:
+Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force
+Connect-AzAccount
+Get-AzContext
+Invoke-ScriptAnalyzer -Path ./setupsimlab.ps1
+
+GitHub Copilot: I’ll verify that `pwsh` is available, install the requested modules in your user scope, then run PSScriptAnalyzer. Azure sign-in may pause for your interactive Microsoft authentication; I’ll stop at that prompt and let you complete it directly in the terminal, then verify `Get-AzContext`.
+
+Ran terminal command:  command -v pwsh; pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+
+PowerShell 7.6.6 is present at `pwsh`. I’m installing PSScriptAnalyzer and the four Az modules exactly in CurrentUser scope now; after that I’ll run the analyzer before starting interactive Azure sign-in.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module PSScriptAnalyzer -Scope CurrentUser -Force; Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force; Get-Module -ListAvailable PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version, Path | Format-Table -AutoSize"
+
+All five modules installed successfully, and PowerShell reports concrete installed versions. I’m running PSScriptAnalyzer on the current script now; its findings may require code fixes before we proceed to Azure login.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module PSScriptAnalyzer; Invoke-ScriptAnalyzer -Path './setupsimlab.ps1' | Format-List *; if (\$?) { exit 0 }"
+
+Read , lines 1 to 120
+
+PSScriptAnalyzer ran successfully and found only `PSAvoidUsingWriteHost` warnings across the script’s console/status output; no parser errors or higher-severity findings appeared. I’m moving to `Connect-AzAccount` and `Get-AzContext` now, which may open a browser or request a device code for you to complete.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module Az.Accounts; Connect-AzAccount; Get-AzContext | Select-Object @{Name='Account';Expression={\$_.Account.Id}}, @{Name='Subscription';Expression={\$_.Subscription.Name}}, @{Name='SubscriptionId';Expression={\$_.Subscription.Id}}, @{Name='TenantId';Expression={\$_.Tenant.Id}} | Format-List"
+
+Azure’s default interactive login failed because Az.Accounts’ macOS browser broker requires the main thread, which this automation terminal doesn’t provide. The module’s own error suggests device-code login instead; I’m checking the installed cmdlet syntax and confirming analyzer severities, then I’ll give you the exact terminal command to finish sign-in without sharing any one-time code here.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module Az.Accounts, PSScriptAnalyzer; Get-Command Connect-AzAccount -Syntax; \$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Group-Object Severity, RuleName | Select-Object Name, Count | Format-Table -AutoSize; "Findings=\$(\$findings.Count); Errors=\$( @((\$findings | Where-Object Severity -eq 'Error')).Count ); ParseErrors=\$( @((\$findings | Where-Object RuleName -eq 'PSParseError')).Count )"; Get-Module -ListAvailable PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version | Format-Table -AutoSize"
+
+Module installation is fully verified. The analyzer reports 10 warnings and zero errors/parse errors: seven console-output style warnings plus three code-quality warnings. The installed Az cmdlet supports `-UseDeviceAuthentication`; I’m getting the three non-style warning details so I can distinguish actionable issues from formatting preferences before asking you to finish sign-in.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Where-Object RuleName -notin 'PSAvoidUsingWriteHost' | Select-Object Line, RuleName, Severity, Message | Format-List; \$ctx = Get-AzContext -ErrorAction SilentlyContinue; if (\$ctx) { \$ctx | Select-Object @{Name='Account';Expression={\$_.Account.Id}}, @{Name='Subscription';Expression={\$_.Subscription.Name}}, @{Name='SubscriptionId';Expression={\$_.Subscription.Id}} | Format-List } else { 'AzureContext=NotAuthenticated' }"
+
+The remaining three analyzer warnings are specific: `InstallAzModules` is detected as unused, `Ensure-AzModule` uses an unapproved verb, and `Test-CidrContains` trips the singular-noun rule. The first appears to be referenced indirectly from a helper, so I’m checking that local call path before deciding whether to adjust code or mark the intentional parameter usage correctly.
+
+Ran terminal command:  grep -nE 'InstallAzModules|Ensure-AzModule|Test-CidrContains' setupsimlab.ps1
+
+Read , lines 30 to 140
+
+The helper does reference `InstallAzModules`, but only through script scope; making it an explicit helper parameter will remove that ambiguity and make the opt-in behavior testable. I’ll also rename the two flagged functions using approved PowerShell verbs and singular nouns, then rerun the analyzer immediately.
+
+Generating patch (28 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; \$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Select-Object Line, RuleName, Severity, Message | Format-Table -Wrap -AutoSize; "Findings=\$(\$findings.Count); Errors=\$( @((\$findings | Where-Object Severity -eq 'Error')).Count ); ParseErrors=\$( @((\$findings | Where-Object RuleName -eq 'PSParseError')).Count )"; if (@($findings | Where-Object Severity -eq 'Error').Count -gt 0) { exit 1 }"
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $findings = @(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings | Select-Object Line, RuleName, Severity, Message | Format-Table -Wrap -AutoSize; "Findings=$($findings.Count); Errors=$(@($findings | Where-Object Severity -eq "Error").Count); ParseErrors=$(@($findings | Where-Object RuleName -eq "PSParseError").Count)"; if (@($findings | Where-Object Severity -eq "Error").Count -gt 0) { exit 1 }'
+
+The code-quality warnings are cleared; PSScriptAnalyzer now reports only seven intentional `Write-Host` style warnings, with zero errors or parse errors. Azure remains unauthenticated because the default browser flow failed in this non-main-thread shell, so I’m doing one last import check for every installed module before handing over the secure device-code sign-in step.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command ' $ErrorActionPreference="Stop"; Import-Module PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute -ErrorAction Stop; Get-Module PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version | Format-Table -AutoSize; $context = Get-AzContext -ErrorAction SilentlyContinue; if ($context -and $context.Subscription.Id) { "AzureContext=Authenticated"; $context | Select-Object @{Name="Account";Expression={$_.Account.Id}}, @{Name="Subscription";Expression={$_.Subscription.Name}}, @{Name="SubscriptionId";Expression={$_.Subscription.Id}} | Format-List } else { "AzureContext=NotAuthenticated" }'
+
+PowerShell setup succeeded. `pwsh` 7.6.6 is available, and PSScriptAnalyzer plus all four Az modules installed and imported successfully:
+
+- PSScriptAnalyzer 1.25.0
+- Az.Accounts 5.5.3
+- Az.Resources 10.2.1
+- Az.Network 8.3.0
+- Az.Compute 11.10.0
+
+PSScriptAnalyzer reports **zero errors and zero parse errors**. It reports seven `PSAvoidUsingWriteHost` style warnings; I also corrected the three other code-quality warnings in `setupsimlab.ps1`.
+
+Azure access is **not yet authenticated**. `Connect-AzAccount`’s normal browser flow failed because the macOS broker needs the main thread in this terminal. In your terminal, run:
+
+```powershell
+pwsh
+Connect-AzAccount -UseDeviceAuthentication
+Get-AzContext
+```
+
+Complete the device-code sign-in directly in Microsoft’s browser page. Windows PowerShell 5.1 is Windows-only; this Mac is using PowerShell 7.6.6. I haven’t run the Azure deployment script.
+
+Made changes.
+
+User: See the current working Azure Subscription's information in the attaced screen snapshot, to run the Azure Deployment script name setupsimlab.ps1 to deploy the resources in resouce group named rg-infra-winmig-apac-v-chengzhiz-poc in the subscription mentioned in the attached screen snapshot.
+
+GitHub Copilot: I’ll use the subscription ID visible in your screenshot, `95642268-5116-484d-9b88-7dfce8c20ce4`, but first I need to authenticate and verify that your account can see the target resource group. The portal screenshot shows billing data is unauthorized, which doesn’t necessarily mean resource deployment is blocked; actual RBAC access will determine that.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Accounts; Connect-AzAccount -UseDeviceAuthentication -Subscription "95642268-5116-484d-9b88-7dfce8c20ce4"; Get-AzContext | Select-Object @{Name="Account";Expression={$_.Account.Id}}, @{Name="Subscription";Expression={$_.Subscription.Name}}, @{Name="SubscriptionId";Expression={$_.Subscription.Id}}, @{Name="TenantId";Expression={$_.Tenant.Id}} | Format-List'
+
+Device-code sign-in is waiting. Please complete the Microsoft authentication directly in the browser using the one-time code displayed in your terminal; I won’t repeat or handle that code in chat. I’ll keep the Azure command running, then verify the selected subscription and resource group before starting deployment.
+
+Opened `Browser`
+
+Azure sign-in is waiting for your approval. I opened Microsoft’s device-authentication page in the browser. Please enter the one-time code shown in your terminal there and complete sign-in. I won’t copy or enter the authentication code for you.
+
+After you approve it, I can verify access to subscription `95642268-5116-484d-9b88-7dfce8c20ce4` and resource group `rg-infra-winmig-apac-v-chengzhiz-poc`, then proceed with deployment. I have not started the script or made Azure resource changes yet.
+
+User: See the attached screen snapshot about login by Microsoft Edge Browser, the login was not successfull, How to resolve this issue? 
+
+GitHub Copilot: The sign-in reached Microsoft, but Conditional Access blocked **Microsoft Azure PowerShell** with error **530033**. This is an organization policy/device-management issue, not a bad password. The screenshot says the device is compliant, so the block may be because the device-code sign-in did not provide the device identity the policy requires, or because another Conditional Access rule applies. The separate billing-access warning does not explain this sign-in failure.
+
+**Recommended route:** You’re already signed into the Azure Portal in Edge. Open **Cloud Shell** from the portal toolbar and choose PowerShell. If your organization permits Cloud Shell, it can use your existing portal session without the local device-code flow. Before deploying, verify the selected subscription and target resource group:
+
+```powershell
+Get-AzContext
+Set-AzContext -SubscriptionId '95642268-5116-484d-9b88-7dfce8c20ce4'
+Get-AzResourceGroup -Name 'rg-infra-winmig-apac-v-chengzhiz-poc'
+```
+
+If Cloud Shell is also blocked, contact your Microsoft 365/Azure administrator. Ask them to review the **Entra sign-in logs** for the failed **Microsoft Azure PowerShell** sign-in (error 530033), and confirm which Conditional Access policy blocked it. Include the request ID, correlation ID, and timestamp from the screenshot. They can confirm whether your Mac is correctly enrolled and registered as a managed, compliant device, or advise on an approved sign-in method. Don’t try to bypass the policy.
+
+The screenshot’s billing warning is separate; deployment still requires sufficient Azure resource permissions on the subscription or target resource group. No Azure deployment was started, and no resources were changed.
+
+User: [Terminal e396341a-e8b2-42be-9c1b-4c29ee97a2a2 notification: command completed. The terminal has been cleaned up.]
+Terminal output:
+mac@MacBook-Pro lab %  curl -sS -L -o /dev/null -w 'asset_url=%{url_effective}\nhttp=%{http_code}\n' --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz; curl -sS -L -r 0-1023 -o /dev/null -w 'range_http=%{http_code} bytes=%{size_download} speed=%{speed_download}\n' --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz
+curl: (28) Operation timed out after 30004 milliseconds with 0 bytes received
+asset_url=https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.tar.gz
+http=000
+curl: (28) Connection timed out after 30005 milliseconds
+range_http=000 bytes=0 speed=0
+mac@MacBook-Pro lab %  curl -sS -I -L --max-time 30 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg | tr -d '\r' | grep -iE 'HTTP/|content-length|location|accept-ranges'; ls -lh /tmp/powershell-7.6.6-osx-x64.tar.gz 2>/dev/null || true; ls -ld "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" 2>/dev/null || true
+curl: (28) Connection timed out after 30004 milliseconds
+-rw-r--r--@ 1 mac  wheel   7.0M Oct 10 12:23 /tmp/powershell-7.6.6-osx-x64.tar.gz
+drwxr-xr-x@ 2 mac  staff  64 Oct 10 12:18 /Users/mac/.local/bin
+drwxr-xr-x@ 2 mac  staff  64 Oct 10 12:18 /Users/mac/.local/share/powershell/7.6.6
+mac@MacBook-Pro lab %  curl -sS -D - -o /dev/null --max-redirs 0 --max-time 20 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg | tr -d '\r' | grep -iE '^HTTP/|^location:|^content-length:'
+HTTP/2 302 
+location: https://release-assets.githubusercontent.com/github-production-release-asset/49609581/c926d0e4-eaa6-49ce-adc7-d13e24addc59?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-10-10T05%3A26%3A48Z&rscd=attachment%3B+filename%3Dpowershell-7.6.6-osx-x64.pkg&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2026-10-10T04%3A26%3A12Z&ske=2026-10-10T05%3A26%3A48Z&sks=b&skv=2018-11-09&sig=nj5FEV712DY5ZhbFMI9E%2BjhH1YtxbMteHB9Ihn3fALc%3D&jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc5MTYwODU3NSwibmJmIjoxNzkxNjA2Nzc1LCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.phfPmc_82jEpD4063tAhRiKE2qxXXCxZhqzyVL_hydA&response-content-disposition=attachment%3B%20filename%3Dpowershell-7.6.6-osx-x64.pkg&response-content-type=application%2Foctet-stream
+content-length: 0
+mac@MacBook-Pro lab %  asset_url=$(curl -sS -D - -o /dev/null --max-redirs 0 --max-time 20 https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-osx-x64.pkg 2>/dev/null | awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub(/^[^:]*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit }'); if [[ -z "$asset_url" ]]; then print 'Could not resolve signed asset URL'; exit 1; fi; curl -sS -L -r 0-1023 -o /dev/null -w 'http=%{http_code} bytes=%{size_download} speed=%{speed_download}\n' --max-time 30 "$asset_url"
+http=206 bytes=1024 speed=390
+mac@MacBook-Pro lab %  rm -f /tmp/powershell-7.6.6-osx-x64.tar.gz; ls -la "$HOME/.local/share/powershell/7.6.6" "$HOME/.local/bin" 2>/dev/null; command -v pwsh || true; command -v powershell || true; command -v brew || true; command -v dotnet || true
+/Users/mac/.local/bin:
+total 0
+drwxr-xr-x@ 2 mac  staff   64 Oct 10 12:18 .
+drwxr-xr-x@ 4 mac  staff  128 Oct 10 12:18 ..
+
+/Users/mac/.local/share/powershell/7.6.6:
+total 0
+drwxr-xr-x@ 2 mac  staff  64 Oct 10 12:18 .
+drwxr-xr-x@ 3 mac  staff  96 Oct 10 12:18 ..
+mac@MacBook-Pro lab %  command -v docker || true; command -v podman || true; command -v colima || true; command -v vmrun || true; command -v az || true; command -v brew || true; command -v pkgutil || true; sw_vers; df -h "$HOME"
+/Applications/VMware Fusion.app/Contents/Public/vmrun
+/usr/sbin/pkgutil
+ProductName:            macOS
+ProductVersion:         26.7.1
+BuildVersion:           25G241
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk1s2   929Gi   331Gi   581Gi    37%    635k  6.1G    0%   /System/Volumes/Data
+mac@MacBook-Pro lab %  "/Applications/VMware Fusion.app/Contents/Public/vmrun" list 2>&1; mdfind 'kMDItemFSName == "pwsh"c' | head -20; command -v port || true; command -v nix || true; command -v conda || true
+Total running VMs: 0
+mac@MacBook-Pro lab %  command -v pwsh || true; command -v powershell || true; command -v az || true; command -v brew || true; ls -l "$HOME/.local/bin/pwsh" "$HOME/.local/share/powershell/7.6.6/pwsh" 2>/dev/null || true; ls -la /Applications/VMware\ Fusion.app/Contents/Public/vmrun 2>/dev/null
+lrw-r--r--@ 1 root  wheel  16 Apr 25 10:53 /Applications/VMware Fusion.app/Contents/Public/vmrun -> ../Library/vmrun
+mac@MacBook-Pro lab %  command -v pwsh; pwsh -NoLogo -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+/usr/local/bin/pwsh
+7.6.6
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Set-PSRepository -Name PSGallery -InstallationPolicy Trusted; Install-Module PSScriptAnalyzer -Scope CurrentUser -Force; Install-Module Az.Accounts, Az.Resources, Az.Network, Az.Compute -Scope CurrentUser -Force; Get-Module -ListAvailable PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version, Path | Format-Table -AutoSize"
+                                                                                
+Name             Version Path                                                   
+----             ------- ----                                                   
+Az.Accounts      5.5.3   /Users/mac/.local/share/powershell/Modules/Az.Account…
+Az.Compute       11.10.0 /Users/mac/.local/share/powershell/Modules/Az.Compute…
+Az.Network       8.3.0   /Users/mac/.local/share/powershell/Modules/Az.Network…
+Az.Resources     10.2.1  /Users/mac/.local/share/powershell/Modules/Az.Resourc…
+PSScriptAnalyzer 1.25.0  /Users/mac/.local/share/powershell/Modules/PSScriptAn…
+
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module PSScriptAnalyzer; Invoke-ScriptAnalyzer -Path './setupsimlab.ps1' | Format-List *; if (\$?) { exit 0 }"
+
+Line                 : 73
+Column               : 5
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "`n=== $Message ===" -ForegroundColor Cyan
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 174
+Column               : 1
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "Subscription: $($context.Subscription.Name) 
+                       [$SubscriptionId]"
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 182
+Column               : 1
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "Resource group: $ResourceGroupName"
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 183
+Column               : 1
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "Deployment location: $Location"
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 407
+Column               : 9
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "VM '$ApplianceVmName' already exists; no 
+                       changes were made to it." -ForegroundColor Yellow
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 435
+Column               : 1
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host "`nDeployment summary" -ForegroundColor Green
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 438
+Column               : 1
+Message              : File 'setupsimlab.ps1' uses Write-Host. Avoid using 
+                       Write-Host because it might not work in all hosts, does 
+                       not work when there is no host, and (prior to PS 5.0) 
+                       cannot be suppressed, captured, or redirected. Instead, 
+                       use Write-Output, Write-Verbose, or Write-Information.
+Extent               : Write-Host @"
+                       NEXT REQUIRED AZURE MIGRATE STEPS
+                       1. Azure Portal > Azure Migrate > Create project.
+                       2. Use resource group: $ResourceGroupName
+                       3. Advanced configuration:
+                          Connectivity method: Private endpoint
+                          Disable public endpoint access: No
+                          Virtual network: $migrateVnetName
+                          Subnet: $privateEndpointSubnetName
+                       4. Discovery and assessment > Discover > VMware vSphere 
+                       > Generate key.
+                       5. Wait for Azure Migrate to create its service-managed 
+                       private endpoints.
+                       6. Discovery and assessment > Properties > Download DNS 
+                       settings.
+                       7. Validate from the appliance VM that each Azure 
+                       Migrate FQDN resolves to its private endpoint IP and 
+                       TCP 443 succeeds.
+                       8. Download and run AzureMigrateInstaller.ps1, 
+                       selecting VMware + Azure public cloud + Private 
+                       endpoint connectivity.
+                       
+                       DNS PRIVATE RESOLVER INBOUND IP
+                       $dnsInboundIp
+                       
+                       For this Azure-to-Azure simulation, the Azure Migrate 
+                       private DNS zones created during Generate Key should be 
+                       linked to both:
+                       - $migrateVnetName
+                       - $simVnetName
+                       This allows the appliance VM in the simulated 
+                       on-premises VNet to resolve Azure Migrate private 
+                       endpoint records directly.
+                       "@ -ForegroundColor Yellow
+RuleName             : PSAvoidUsingWriteHost
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 76
+Column               : 10
+Message              : The cmdlet 'Ensure-AzModule' uses an unapproved verb.
+Extent               : Ensure-AzModule
+RuleName             : PSUseApprovedVerbs
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : 
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 61
+Column               : 13
+Message              : The parameter 'InstallAzModules' has been declared but 
+                       not used.
+Extent               : $InstallAzModules
+RuleName             : PSReviewUnusedParameter
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : InstallAzModules
+SuggestedCorrections : 
+IsSuppressed         : False
+
+Line                 : 117
+Column               : 10
+Message              : The cmdlet 'Test-CidrContains' uses a plural noun. A 
+                       singular noun should be used instead.
+Extent               : Test-CidrContains
+RuleName             : PSUseSingularNouns
+Severity             : Warning
+ScriptName           : setupsimlab.ps1
+ScriptPath           : /Users/mac/Downloads/lab/setupsimlab.ps1
+RuleSuppressionID    : Test-CidrContains
+SuggestedCorrections : {Test-CidrContain}
+IsSuppressed         : False
+
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module Az.Accounts; Connect-AzAccount; Get-AzContext | Select-Object @{Name='Account';Expression={\$_.Account.Id}}, @{Name='Subscription';Expression={\$_.Subscription.Name}}, @{Name='SubscriptionId';Expression={\$_.Subscription.Id}}, @{Name='TenantId';Expression={\$_.Tenant.Id}} | Format-List"
+Please select the account you want to login with.
+
+WARNING: Unable to acquire token for tenant 'organizations' with error 'InteractiveBrowserCredential authentication failed: Interactive requests with mac broker enabled must be executed on the main thread on macOS.'
+WARNING: Please run 'Connect-AzAccount -DeviceCode' if browser is not supported in this session.
+Connect-AzAccount: InteractiveBrowserCredential authentication failed: Interactive requests with mac broker enabled must be executed on the main thread on macOS.
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; Import-Module Az.Accounts, PSScriptAnalyzer; Get-Command Connect-AzAccount -Syntax; \$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Group-Object Severity, RuleName | Select-Object Name, Count | Format-Table -AutoSize; \"Findings=\$(\$findings.Count); Errors=\$( @((\$findings | Where-Object Severity -eq 'Error')).Count ); ParseErrors=\$( @((\$findings | Where-Object RuleName -eq 'PSParseError')).Count )\"; Get-Module -ListAvailable PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version | Format-Table -AutoSize"
+
+Connect-AzAccount [-Environment <string>] [-Tenant <string>] [-AccountId <string>] [-Subscription <string>] [-AuthScope <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-UseDeviceAuthentication] [-Force] [-ClaimsChallenge <string>] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -Credential <pscredential> -ServicePrincipal -Tenant <string> [-Environment <string>] [-Subscription <string>] [-AuthScope <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -Credential <pscredential> [-Environment <string>] [-Tenant <string>] [-Subscription <string>] [-AuthScope <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -CertificateThumbprint <string> -ApplicationId <string> -Tenant <string> [-Environment <string>] [-ServicePrincipal] [-Subscription <string>] [-AuthScope <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-SendCertificateChain] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -ApplicationId <string> -Tenant <string> -FederatedToken <string> [-Environment <string>] [-ServicePrincipal] [-Subscription <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -ApplicationId <string> -Tenant <string> -CertificatePath <string> [-Environment <string>] [-ServicePrincipal] [-Subscription <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-SendCertificateChain] [-CertificatePassword <securestring>] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -AccessToken <string> -AccountId <string> [-Environment <string>] [-Tenant <string>] [-GraphAccessToken <string>] [-MicrosoftGraphAccessToken <string>] [-KeyVaultAccessToken <string>] [-Subscription <string>] [-ContextName <string>] [-SkipValidation] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+Connect-AzAccount -Identity [-Environment <string>] [-Tenant <string>] [-AccountId <string>] [-Subscription <string>] [-AuthScope <string>] [-ContextName <string>] [-SkipContextPopulation] [-MaxContextPopulation <int>] [-Force] [-Scope <ContextModificationScope>] [-DefaultProfile <IAzureContextContainer>] [-WhatIf] [-Confirm] [-AcquirePolicyToken] [-ChangeReference <string>] [<CommonParameters>]
+
+
+Name                             Count
+----                             -----
+Warning, PSAvoidUsingWriteHost       7
+Warning, PSReviewUnusedParameter     1
+Warning, PSUseApprovedVerbs          1
+Warning, PSUseSingularNouns          1
+
+Findings=10; Errors=0; ParseErrors=0
+
+Name             Version
+----             -------
+Az.Accounts      5.5.3
+Az.Compute       11.10.0
+Az.Network       8.3.0
+Az.Resources     10.2.1
+PSScriptAnalyzer 1.25.0
+
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Where-Object RuleName -notin 'PSAvoidUsingWriteHost' | Select-Object Line, RuleName, Severity, Message | Format-List; \$ctx = Get-AzContext -ErrorAction SilentlyContinue; if (\$ctx) { \$ctx | Select-Object @{Name='Account';Expression={\$_.Account.Id}}, @{Name='Subscription';Expression={\$_.Subscription.Name}}, @{Name='SubscriptionId';Expression={\$_.Subscription.Id}} | Format-List } else { 'AzureContext=NotAuthenticated' }"
+
+Line     : 61
+RuleName : PSReviewUnusedParameter
+Severity : Warning
+Message  : The parameter 'InstallAzModules' has been declared but not used.
+
+Line     : 76
+RuleName : PSUseApprovedVerbs
+Severity : Warning
+Message  : The cmdlet 'Ensure-AzModule' uses an unapproved verb.
+
+Line     : 117
+RuleName : PSUseSingularNouns
+Severity : Warning
+Message  : The cmdlet 'Test-CidrContains' uses a plural noun. A singular noun 
+           should be used instead.
+
+AzureContext=NotAuthenticated
+mac@MacBook-Pro lab %  grep -nE 'InstallAzModules|Ensure-AzModule|Test-CidrContains' setupsimlab.ps1
+61:    [switch]$InstallAzModules
+76:function Ensure-AzModule {
+79:        if (-not $InstallAzModules) {
+80:            throw "Required module '$Name' is not installed. Rerun with -InstallAzModules or install it with: Install-Module $Name -Scope CurrentUser"
+117:function Test-CidrContains {
+162:@('Az.Accounts','Az.Resources','Az.Network','Az.Compute') | ForEach-Object { Ensure-AzModule $_ }
+189:if (-not (Test-CidrContains -ParentCidr $SimOnPremVnetPrefix -ChildCidr $ApplianceSubnetPrefix)) {
+193:    if (-not (Test-CidrContains -ParentCidr $AzureMigrateVnetPrefix -ChildCidr $subnetPrefix)) {
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command "\$ErrorActionPreference='Stop'; \$findings = @(Invoke-ScriptAnalyzer -Path './setupsimlab.ps1'); \$findings | Select-Object Line, RuleName, Severity, Message | Format-Table -Wrap -AutoSize; \"Findings=\$(\$findings.Count); Errors=\$( @((\$findings | Where-Object Severity -eq 'Error')).Count ); ParseErrors=\$( @((\$findings | Where-Object RuleName -eq 'PSParseError')).Count )\"; if (@($findings | Where-Object Severity -eq 'Error').Count -gt 0) { exit 1 }"
+ParserError: 
+Line |
+   1 |  … Where-Object RuleName -eq 'PSParseError')).Count )"; if (@( | Where-O …
+     |                                                                ~
+     | An empty pipe element is not allowed.
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $findings = @(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings | Select-Object Line, RuleName, Severity, Message | Format-Table -Wrap -AutoSize; "Findings=$($findings.Count); Errors=$(@($findings | Where-Object Severity -eq "Error").Count); ParseErrors=$(@($findings | Where-Object RuleName -eq "PSParseError").Count)"; if (@($findings | Where-Object Severity -eq "Error").Count -gt 0) { exit 1 }'
+
+Line RuleName              Severity Message
+---- --------              -------- -------
+  73 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 177 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 185 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 186 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 410 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 438 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+ 441 PSAvoidUsingWriteHost  Warning File 'setupsimlab.ps1' uses Write-Host.
+                                    Avoid using Write-Host because it might
+                                    not work in all hosts, does not work when
+                                    there is no host, and (prior to PS 5.0)
+                                    cannot be suppressed, captured, or
+                                    redirected. Instead, use Write-Output,
+                                    Write-Verbose, or Write-Information.
+
+Findings=7; Errors=0; ParseErrors=0
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command ' $ErrorActionPreference="Stop"; Import-Module PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute -ErrorAction Stop; Get-Module PSScriptAnalyzer, Az.Accounts, Az.Resources, Az.Network, Az.Compute | Sort-Object Name | Select-Object Name, Version | Format-Table -AutoSize; $context = Get-AzContext -ErrorAction SilentlyContinue; if ($context -and $context.Subscription.Id) { "AzureContext=Authenticated"; $context | Select-Object @{Name="Account";Expression={$_.Account.Id}}, @{Name="Subscription";Expression={$_.Subscription.Name}}, @{Name="SubscriptionId";Expression={$_.Subscription.Id}} | Format-List } else { "AzureContext=NotAuthenticated" }'
+
+Name             Version
+----             -------
+Az.Accounts      5.5.3
+Az.Compute       11.10.0
+Az.Network       8.3.0
+Az.Resources     10.2.1
+PSScriptAnalyzer 1.25.0
+
+AzureContext=NotAuthenticated
+mac@MacBook-Pro lab %  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Accounts; Connect-AzAccount -UseDeviceAuthentication -Subscription "95642268-5116-484d-9b88-7dfce8c20ce4"; Get-AzContext | Select-Object @{Name="Account";Expression={$_.Account.Id}}, @{Name="Subscription";Expression={$_.Subscription.Name}}, @{Name="SubscriptionId";Expression={$_.Subscription.Id}}, @{Name="TenantId";Expression={$_.Tenant.Id}} | Format-List'
+WARNING: You may need to login again after updating "EnableLoginByWam".
+Please select the account you want to login with.
+
+[Login to Azure] To sign in, use a web browser to open the page https://login.microsoft.com/device and enter the code INQJ8AVN9 to authenticate.
+WARNING: Unable to acquire token for tenant 'organizations' with error 'DeviceCodeCredential authentication failed: Verification code expired before contacting the server'
+Connect-AzAccount: DeviceCodeCredential authentication failed: Verification code expired before contacting the server
+                                                                                
+
+GitHub Copilot: The terminal output confirms that Azure authentication failed: the device code expired before it could be used. **No Azure context was established, and the deployment did not run.**
+
+A fresh code must be entered promptly, but the earlier Microsoft error **530033** indicates a Conditional Access block as well. Retrying with another code alone may not resolve it. Ask your tenant administrator to review the Entra sign-in log for the **Microsoft Azure PowerShell** attempt and determine whether policy requires a managed-device claim that this device-code flow cannot provide. The screenshot showed the device as compliant, so ask them to check the device registration and the claims available to the PowerShell sign-in, not only compliance status.
+
+You can also try **Cloud Shell from the Azure Portal session that is already signed in**. First verify access without deploying:
+
+```powershell
+Get-AzContext
+Set-AzContext -SubscriptionId '95642268-5116-484d-9b88-7dfce8c20ce4'
+Get-AzResourceGroup -Name 'rg-infra-winmig-apac-v-chengzhiz-poc'
+```
+
+Proceed only if those commands show the intended subscription and resource group. The billing warning in the portal is separate from resource access.
+
+User: When executing the Power Script in Cloud shell of Azure portal, how to resolve the issue mentioned in the attached screen snapshot?
+
+GitHub Copilot: The screenshot pinpoints the failure in CIDR validation, before any resources are created: PowerShell interprets `0xFFFFFFFF` as signed `-1`, then the cast to `UInt64` fails. I’ll reproduce that conversion locally, fix the mask arithmetic in the script, and rerun the script’s address-space checks without making Azure changes.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$x = [uint64]0xFFFFFFFF; "hex cast=$x"'
+
+Read , lines 82 to 130
+
+The reproduction confirms the exact cause: `[uint64]0xFFFFFFFF` evaluates as a cast from `-1` and throws. I’m replacing both all-ones constants with the equivalent positive decimal value `4294967295`; then I’ll execute the exact default CIDR validations under `pwsh` and rerun PSScriptAnalyzer.
+
+Generating patch (9 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors); if ($parseErrors.Count) { throw ($parseErrors | Out-String) }; $ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @("Get-CidrRange","Test-CidrOverlap","Test-CidrContainment")},$true) | ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }; $cases=@(@("10.20.0.0/16","10.30.0.0/16",$false),@("10.20.0.0/16","10.20.1.0/24",$true),@("10.30.0.0/16","10.30.1.0/24",$true),@("10.30.0.0/16","10.30.2.0/28",$true),@("10.30.1.0/24","10.30.2.0/28",$false)); foreach($case in $cases){$got=Test-CidrOverlap -Cidr1 $case[0] -Cidr2 $case[1]; if($got -ne $case[2]){throw "Overlap failed: $($case[0]), $($case[1])"}}; if(-not (Test-CidrContainment -ParentCidr "10.20.0.0/16" -ChildCidr "10.20.1.0/24")){throw "Containment failed for appliance subnet"}; if(-not (Test-CidrContainment -ParentCidr "10.30.0.0/16" -ChildCidr "10.30.2.0/28")){throw "Containment failed for DNS subnet"}; foreach($prefix in 0,1,16,24,28,31,32){$cidr="0.0.0.0/$prefix"; $null=Get-CidrRange $cidr}; "PASS: parser, default overlap and containment cases, plus prefix boundary cases"'
+
+The CIDR fix passes a real PowerShell 7.6.6 check: the file parses, the default VNet/subnet overlap and containment cases give the expected results, and mask boundary prefixes work. I’m running the analyzer once more to ensure the patch introduced no new findings.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; Import-Module PSScriptAnalyzer; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings | Group-Object Severity,RuleName | Select-Object Name,Count | Format-Table -AutoSize; "Findings=$($findings.Count); Errors=$(@($findings | Where-Object Severity -eq "Error").Count); ParseErrors=$(@($findings | Where-Object RuleName -eq "PSParseError").Count)"; if (@($findings | Where-Object Severity -eq "Error").Count -gt 0) { exit 1 }'
+
+The Cloud Shell failure was caused by the script’s CIDR arithmetic, not Azure access. In PowerShell, `0xFFFFFFFF` was interpreted as `-1`; converting that to `UInt64` triggered the error shown in your screenshot. I replaced the hexadecimal constants with the equivalent positive decimal value in `setupsimlab.ps1:99`.
+
+I verified the script parses and tested its CIDR functions against the configured VNet and subnet ranges, plus prefix-boundary cases. All passed. PSScriptAnalyzer reports **zero errors and zero parse errors**; the only remaining findings are seven `Write-Host` style warnings.
+
+You can upload the updated script to Cloud Shell and rerun it. This fix only addresses the local validation failure; it does not guarantee later Azure deployment steps will succeed.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ls
+Microsoft  setupsimlab.ps1
+PS /home/v-chengzhiz> ./setupsimlab.ps1
+
+=== Loading Azure PowerShell modules ===
+
+=== Authenticating and selecting subscription ===
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+
+=== Validating the existing resource group ===
+Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Deployment location: westus2
+
+=== Validating address spaces ===
+
+=== Registering required resource providers ===
+
+=== Creating or updating the appliance NSG ===
+
+=== Creating outbound-only NAT Gateway for appliance updates and required public authentication endpoints ===
+
+=== Creating the simulated on-premises VNet ===
+
+=== Creating the Azure Migrate VNet ===
+
+=== Creating bidirectional VNet peering ===
+setupsimlab.ps1: A parameter cannot be found that matches parameter name 'AllowVirtualNetworkAccess'.
+PS /home/v-chengzhiz> 
+
+When exexuting the setupimlab.ps1 Power Script, how to resolve the above issue?
+
+GitHub Copilot: The deployment made it through VNet creation and failed at peering because the Cloud Shell’s `Add-AzVirtualNetworkPeering` version does not recognize `-AllowVirtualNetworkAccess`. I’ll inspect the installed cmdlet syntax and the exact call sites, then update the script to use parameters supported by that Az.Network version; peering access may be enabled by default, so I’ll verify that rather than dropping the switch blindly.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Network; Get-Module Az.Network | Select-Object Name,Version,Path | Format-List; Get-Command Add-AzVirtualNetworkPeering -Syntax; Get-Help Add-AzVirtualNetworkPeering -Full | Select-String -Pattern "AllowVirtualNetworkAccess|AllowForwardedTraffic|default|gateway" -Context 2,2'
+
+Searched for regex `Add-AzVirtualNetworkPeering|AllowVirtualNetworkAccess|AllowForwardedTraffic` (`**/setupsimlab.ps1`), 2 results
+
+The installed Az.Network 8.3.0 syntax confirms the cause: it supports `-BlockVirtualNetworkAccess` but has no `-AllowVirtualNetworkAccess`; access is allowed unless that blocking switch is supplied. I’ll remove the unsupported switch from both peering creations and keep `-AllowForwardedTraffic`, then validate the modified script and confirm the supported parameter set locally.
+
+Generating patch (9 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors) | Out-Null; if ($parseErrors.Count) { throw ($parseErrors | Out-String) }; Import-Module Az.Network; $cmd=Get-Command Add-AzVirtualNetworkPeering; if ($cmd.Parameters.ContainsKey("AllowVirtualNetworkAccess")) { throw "Unexpected: obsolete parameter still exists" }; if (-not $cmd.Parameters.ContainsKey("BlockVirtualNetworkAccess") -or -not $cmd.Parameters.ContainsKey("AllowForwardedTraffic")) { throw "Expected current peering parameters are missing" }; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings | Group-Object Severity,RuleName | Select-Object Name,Count | Format-Table -AutoSize; "ParseErrors=0; supported Add-AzVirtualNetworkPeering parameter names verified"'
+
+The error is a cmdlet-version mismatch. Your Cloud Shell’s Az.Network does not support `-AllowVirtualNetworkAccess`; VNet access is allowed by default, and `-BlockVirtualNetworkAccess` is the switch to disable it.
+
+I removed the unsupported parameter from both peering commands in `setupsimlab.ps1:345`. The script parses, the installed cmdlet’s parameters were verified, and PSScriptAnalyzer reports no errors. Its seven remaining findings are `Write-Host` style warnings.
+
+Upload the updated script to Cloud Shell and rerun it. It should reuse the resources created before the peering step and continue from there. I have not run the deployment against Azure.
+
+Made changes.
+
+User: explain in detail step by step what the setupsimlab.ps1 do
+
+GitHub Copilot: **What the Script Does**
+`setupsimlab.ps1` builds Azure networking and an optional Windows VM as a foundation for an Azure Migrate private-endpoint lab. It does **not** create the Azure Migrate project or configure its service-managed private endpoints.
+
+1. **Reads deployment options.** Parameters let you choose a subscription, existing resource group, region, resource-name prefix, address ranges, VM settings, and whether to deploy the VM. By default, the target group is `rg-infra-winmig-apac-v-chengzhiz-poc`, VM deployment is enabled, and the VM size is `Standard_D8s_v5`.
+
+2. **Checks whether to proceed.** The script supports `-WhatIf` and `-Confirm` through `ShouldProcess`. In this script, `-WhatIf` exits immediately at the start; it does not produce a preview of each Azure resource operation.
+
+3. **Loads Azure PowerShell modules and selects a subscription.** It imports `Az.Accounts`, `Az.Resources`, `Az.Network`, and `Az.Compute`. If modules are missing, it can install them when run with `-InstallAzModules`. It uses the current Azure login unless a subscription ID is supplied, then selects that subscription.
+
+4. **Checks the existing resource group and chooses a region.** It looks up the named resource group and stops if it cannot find it. If `-Location` is omitted, it uses the resource group’s region. In the Cloud Shell run you shared, that region was `westus2`. The script does not create the resource group.
+
+5. **Validates network address ranges.** It parses the IPv4 CIDRs, checks that the two VNet address spaces do not overlap, verifies each subnet is fully contained in its VNet, and checks that the two Azure Migrate subnets do not overlap. These checks run before provider registration and resource creation.
+
+6. **Registers Azure resource providers.** It checks and, if needed, registers providers for networking, compute, storage, Key Vault, Migrate, and Recovery Services. When registration is needed, it polls until registration completes or times out. Provider registration changes subscription state.
+
+7. **Creates or updates the appliance network security group.** The NSG allows TCP 44368 and 3389 from the simulated on-premises VNet’s address range, then explicitly denies those ports from other sources. If the NSG already exists, the script reconciles its named rules and stops if an unrelated rule occupies one of its chosen priorities.
+
+8. **Creates outbound NAT resources.** It creates a Standard public IP and NAT Gateway if they do not already exist. The gateway provides outbound connectivity for the appliance subnet; the VM itself is not assigned a public IP.
+
+9. **Creates the simulated on-premises VNet.** It creates or updates the VNet using `10.20.0.0/16` by default. Its `snet-appliance` subnet uses `10.20.1.0/24` and is associated with the NSG and NAT Gateway.
+
+10. **Creates the Azure Migrate VNet and subnets.** It creates or updates a VNet using `10.30.0.0/16` by default. It adds:
+   - `snet-private-endpoint` (`10.30.1.0/24`), with private endpoint network policies disabled.
+   - `snet-dns-inbound` (`10.30.2.0/28`), delegated to `Microsoft.Network/dnsResolvers`.
+
+11. **Creates two VNet peerings.** Each VNet gets a peering to the other, with forwarded traffic allowed. With the installed Az.Network cmdlet, VNet access is enabled by default; the script does not use the unsupported `-AllowVirtualNetworkAccess` parameter. It later checks that both peerings reach `Connected`.
+
+12. **Creates an Azure DNS Private Resolver and inbound endpoint.** It uses Azure Resource Manager REST API version `2022-07-01` to create or update the resolver in the Azure Migrate VNet, then creates an inbound endpoint in the delegated DNS subnet. It polls each resource until its provisioning state is `Succeeded` and reports the inbound IP.
+
+13. **Optionally creates the appliance VM.** Because `DeployApplianceVM` defaults to `$true`, the script prompts for a local administrator credential and creates a Windows Server 2022 VM by default. It creates a NIC on the appliance subnet, uses a 128-GB Premium SSD OS disk, and does not attach a public IP. If the VM already exists, it leaves it unchanged.
+
+14. **Performs a limited post-deployment check and prints next steps.** It verifies peering state and prints a resource summary. It also tells you to create the Azure Migrate project, select private endpoint connectivity, generate the key, and install the appliance. It recommends linking Azure Migrate’s private DNS zones to both VNets; the script itself does not create those zones or links.
+
+**Cost and Validation Notes**
+The script creates billable resources, notably a NAT Gateway and public IP, and by default a VM and managed disk. Check the target subscription, permissions, available VM capacity, and expected costs before running it. Its final automated validation confirms peering state, but does not verify VM health, DNS resolution, outbound connectivity, or Azure Migrate endpoint reachability.
+
+User: PS /home/v-chengzhiz> ./setupsimlab.ps1
+
+=== Loading Azure PowerShell modules ===
+
+=== Authenticating and selecting subscription ===
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+
+=== Validating the existing resource group ===
+Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Deployment location: westus2
+
+=== Validating address spaces ===
+
+=== Registering required resource providers ===
+
+=== Creating or updating the appliance NSG ===
+
+=== Creating outbound-only NAT Gateway for appliance updates and required public authentication endpoints ===
+
+=== Creating the simulated on-premises VNet ===
+
+=== Creating the Azure Migrate VNet ===
+
+=== Creating bidirectional VNet peering ===
+
+=== Creating Azure DNS Private Resolver ===
+Exception: /home/v-chengzhiz/setupsimlab.ps1:153
+Line |
+ 153 |              throw "ARM GET failed. StatusCode=$($r.StatusCode), Path= …
+     |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | ARM GET failed. StatusCode=404,
+     | Path=/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/dnsResolvers/azmpe-lab-dnspr?api-version=2022-07-01, Content={   "error": {     "details": null,     "code": "NotFound",     "message": "DNS resolver not found in database. dnsResolverResourceId=/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/dnsResolvers/azmpe-lab-dnspr",     "target": null   } }
+PS /home/v-chengzhiz> 
+
+When executing the setupsimlab.ps1 power script, how to resolve the above probelms?
+
+GitHub Copilot: This is a different failure point: the resolver PUT was accepted, but the script’s immediate GET returned a transient 404 (“not found in database”). I’ll inspect the current ARM helper and Az REST response shape, then update the wait logic to honor Azure’s long-running-operation headers and tolerate brief resource-read propagation delays instead of failing at the first 404.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Accounts; Get-Help Invoke-AzRestMethod -Full | Select-String -Pattern "StatusCode|Headers|Content|Response" -Context 1,2; (Get-Command Invoke-AzRestMethod).Parameters.Keys'
+
+Read , lines 125 to 175
+
+Read , lines 365 to 410
+
+The response confirms Az.Accounts has built-in `-WaitForCompletion` support for REST calls, which is preferable to guessing at response-header formats. I’m checking its exact semantics and whether it returns the final resource or just the operation result; then I’ll apply the smallest compatible change and validate that wait logic with a mocked 404-then-success sequence.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Accounts; (Get-Help Invoke-AzRestMethod -Full).parameters.parameter | Where-Object name -in "WaitForCompletion","PollFrom","FinalResultFrom" | Format-List name,description; (Get-Help Invoke-AzRestMethod -Examples).examples.example | ForEach-Object { $_.code }'
+
+Read , lines 1 to 130
+
+Read , lines 131 to 210
+
+Az.Accounts documents `-WaitForCompletion` for long-running REST PUTs, and its example returns the completed resource response. I’ll use that on the resolver PUTs and make the follow-up GET tolerate brief 404 propagation, while preserving a clear failure if the resolver stays missing; then I’ll test both the transient-404 recovery and persistent-404 timeout path locally without Azure calls.
+
+Generating patch (22 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors); if($parseErrors.Count){throw ($parseErrors|Out-String)}; foreach($name in "Invoke-ArmPut","Wait-ArmProvisioning"){$fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true); . ([scriptblock]::Create($fn.Extent.Text))}; $script:responses=@([pscustomobject]@{StatusCode=404;Content="not ready"},[pscustomobject]@{StatusCode=200;Content="{`"properties`":{`"provisioningState`":`"Succeeded`"}}"}); $script:responseIndex=0; function Invoke-AzRestMethod { param($Method,$Path,$Payload,[switch]$WaitForCompletion); if($Method -eq "PUT"){$script:putWait=$WaitForCompletion.IsPresent; return [pscustomobject]@{StatusCode=200;Content="{}"}}; $response=$script:responses[$script:responseIndex]; $script:responseIndex++; return $response }; function Start-Sleep { param([int]$Seconds) }; $result=Wait-ArmProvisioning -Path "/test" -MaxAttempts 3 -DelaySeconds 0; if($result.properties.provisioningState -ne "Succeeded" -or $script:responseIndex -ne 2){throw "Transient 404 retry test failed"}; $putResult=Invoke-ArmPut -Path "/test" -Body @{ok=$true}; if(-not $script:putWait){throw "PUT did not request WaitForCompletion"}; "PASS: 404 was retried until resource became Succeeded; ARM PUT requested WaitForCompletion"; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); "Analyzer errors=$(@($findings|Where-Object Severity -eq Error).Count); parse errors=$(@($findings|Where-Object RuleName -eq PSParseError).Count); warnings=$(@($findings|Where-Object Severity -eq Warning).Count)"; if(@($findings|Where-Object Severity -eq Error).Count){exit 1}'
+
+The resolver PUT returned `202 Accepted`, which means Azure had accepted the request but might not have finished creating the DNS resolver. The script immediately tried to GET it; Azure briefly returned `404 NotFound` while the resource was not yet visible.
+
+I updated `setupsimlab.ps1` to use Az.Accounts’ `-WaitForCompletion` on ARM PUT requests and to retry transient 404s while waiting for a resource to become visible and reach `Succeeded`.
+
+**Validation:** PowerShell parsing passed. A mocked ARM test confirmed that a 404 is retried until the resource reports `Succeeded`, and that PUT requests wait for completion. PSScriptAnalyzer reports zero errors and zero parse errors; its seven remaining findings are `Write-Host` style warnings. I did not make live Azure calls.
+
+Upload the updated script to Cloud Shell and rerun it. The earlier steps created or updated resources in Azure; don’t delete them just to retry. The script checks for several existing resources and is intended to continue, but the resolver operation will now wait and retry rather than failing on the first 404.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ./setupsimlab.ps1
+
+=== Loading Azure PowerShell modules ===
+
+=== Authenticating and selecting subscription ===
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+
+=== Validating the existing resource group ===
+Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Deployment location: westus2
+
+=== Validating address spaces ===
+
+=== Registering required resource providers ===
+
+=== Creating or updating the appliance NSG ===
+
+=== Creating outbound-only NAT Gateway for appliance updates and required public authentication endpoints ===
+
+=== Creating the simulated on-premises VNet ===
+
+=== Creating the Azure Migrate VNet ===
+
+=== Creating bidirectional VNet peering ===
+
+=== Creating Azure DNS Private Resolver ===
+
+=== Creating Azure DNS Private Resolver inbound endpoint ===
+Invoke-AzRestMethod: /home/v-chengzhiz/setupsimlab.ps1:137
+Line |
+ 137 |  … $response = Invoke-AzRestMethod -Method PUT -Path $Path -Payload $jso …
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | An error occurred while sending the request.
+PS /home/v-chengzhiz> 
+
+GitHub Copilot: This failure is now inside Az.Accounts’ `Invoke-AzRestMethod` while it waits on the inbound-endpoint PUT; the script’s own polling helper never gets control. Since we already have explicit provisioning polling that handles Azure’s temporary 404s, I’ll remove the cmdlet’s internal wait and let the script’s poller manage both resolver operations. I’ll also make PUT errors surface their underlying exception so any genuine Azure or network rejection is diagnosable.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Accounts; Get-Module Az.Accounts | Select-Object Version; (Get-Help Invoke-AzRestMethod -Full).parameters.parameter | Where-Object name -eq "WaitForCompletion" | Format-List *'
+
+Read , lines 130 to 175
+
+The script currently passes `-WaitForCompletion` inside `Invoke-ArmPut`; Az.Accounts 5.5.3 then owns the async wait and is where the request throws. I’ll return the initial 200/201/202 response instead, rely on `Wait-ArmProvisioning` for completion and propagation retries, and wrap PUT transport failures with the endpoint path plus inner exception details.
+
+Generating patch (16 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors); if($parseErrors.Count){throw ($parseErrors|Out-String)}; foreach($name in "Invoke-ArmPut","Wait-ArmProvisioning"){$fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true); . ([scriptblock]::Create($fn.Extent.Text))}; $script:responses=@([pscustomobject]@{StatusCode=404;Content="not ready"},[pscustomobject]@{StatusCode=200;Content="{`"properties`":{`"provisioningState`":`"Succeeded`"}}"}); $script:responseIndex=0; function Invoke-AzRestMethod { param($Method,$Path,$Payload,$ErrorAction,[switch]$WaitForCompletion); if($Method -eq "PUT"){$script:putArgs=@{Method=$Method;Path=$Path;Payload=$Payload}; return [pscustomobject]@{StatusCode=202;Content="accepted"}}; $response=$script:responses[$script:responseIndex]; $script:responseIndex++; return $response }; function Start-Sleep { param([int]$Seconds) }; $null=Invoke-ArmPut -Path "/test" -Body @{ok=$true}; if($script:putArgs.ContainsKey("WaitForCompletion")){throw "PUT must not invoke Az internal wait"}; $result=Wait-ArmProvisioning -Path "/test" -MaxAttempts 3 -DelaySeconds 0; if($result.properties.provisioningState -ne "Succeeded" -or $script:responseIndex -ne 2){throw "Poller retry test failed"}; "PASS: PUT returns accepted response; local poller retries transient 404 to Succeeded"; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); "Analyzer errors=$(@($findings|Where-Object Severity -eq Error).Count); parse errors=$(@($findings|Where-Object RuleName -eq PSParseError).Count)"; if(@($findings|Where-Object Severity -eq Error).Count){exit 1}'
+
+The failure came from `Invoke-AzRestMethod -WaitForCompletion` while creating the DNS resolver inbound endpoint. I updated `setupsimlab.ps1` to return from the initial ARM PUT and let the script’s own provisioning poller wait for the resource, retrying temporary 404s. If the PUT itself still fails, the error now includes the underlying exception message.
+
+I verified the script parses, and a mocked test passed for a 202 PUT followed by a transient 404 and then a successful provisioning response. PSScriptAnalyzer reports zero errors and zero parse errors. **I did not call Azure from this environment.**
+
+Upload the updated script to Cloud Shell and rerun it. The earlier network resources and peerings were already created; the script should reuse or update those and continue. If it fails again, share the new full error message, especially the `Error=` detail.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ./setupsimlab.ps1
+
+=== Loading Azure PowerShell modules ===
+
+=== Authenticating and selecting subscription ===
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+
+=== Validating the existing resource group ===
+Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Deployment location: westus2
+
+=== Validating address spaces ===
+
+=== Registering required resource providers ===
+
+=== Creating or updating the appliance NSG ===
+
+=== Creating outbound-only NAT Gateway for appliance updates and required public authentication endpoints ===
+
+=== Creating the simulated on-premises VNet ===
+
+=== Creating the Azure Migrate VNet ===
+
+=== Creating bidirectional VNet peering ===
+
+=== Creating Azure DNS Private Resolver ===
+
+=== Creating Azure DNS Private Resolver inbound endpoint ===
+
+=== Creating the Windows Server 2022 Azure Migrate appliance VM ===
+
+PowerShell credential request
+Enter a strong local administrator password for azmapp-lab01
+Password for user azureadmin: *********
+
+WARNING: Upcoming breaking changes in the cmdlet 'New-AzVM' :
+The default VM size will change from 'Standard_D2s_v3' to 'Standard_D2s_v5'.
+- This change will take effect on '11/1/2025'
+- The change is expected to take effect in Az version : '15.0.0'
+- The change is expected to take effect in Az.Compute version : '11.0.0'
+Note : Go to https://aka.ms/azps-changewarnings for steps to suppress this breaking change warning, and other information on breaking changes in Azure PowerShell.
+WARNING: Since there is no standard storage account in the same region as the VM, new standard storage account, microrginfazma101006490, is created for boot diagnostics.
+New-AzVM: /home/v-chengzhiz/setupsimlab.ps1:420
+Line |
+ 420 |          New-AzVM -ResourceGroupName $ResourceGroupName -Location $Loc …
+     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Resource 'azmapp-lab01' was disallowed by policy. Policy identifiers:
+     | '[{"policyAssignment":{"name":"Restrict-WindowsServer2022image","id":"/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyAssignments/c5d3457623c753c0b7396c36"},"policyDefinition":{"name":"Restrict-WindowsServer2022image","id":"/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyDefinitions/163064f9d47b5e16a8038d30","version":"1.0.0"}}]'. ErrorCode: RequestDisallowedByPolicy ErrorMessage: Resource 'azmapp-lab01' was disallowed by policy. Policy identifiers: '[{"policyAssignment":{"name":"Restrict-WindowsServer2022image","id":"/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyAssignments/c5d3457623c753c0b7396c36"},"policyDefinition":{"name":"Restrict-WindowsServer2022image","id":"/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyDefinitions/163064f9d47b5e16a8038d30","version":"1.0.0"}}]'. ErrorTarget: azmapp-lab01 StatusCode: 403 ReasonPhrase: Forbidden OperationID : 9bbcc31e-b0ad-4160-9b32-ccaf1d469eee
+PS /home/v-chengzhiz> 
+
+GitHub Copilot: The VM request is reaching Azure, but subscription policy explicitly blocks the hard-coded Server 2022 image; that’s an authorization guardrail, not a script syntax problem. I’ll make the appliance image configurable and improve the policy-failure message, while keeping the current default so the script cannot silently switch to a different image that may also be disallowed. First I’ll verify how best to query that policy from your authenticated Cloud Shell.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Resources; Get-Command Get-AzPolicyAssignment, Get-AzPolicyDefinition -ErrorAction SilentlyContinue | Select-Object Name,Source | Format-Table -AutoSize'
+
+Read , lines 30 to 65
+
+Read , lines 395 to 430
+
+The local Az.Resources installation includes `Get-AzPolicyAssignment` and `Get-AzPolicyDefinition`, so Cloud Shell can inspect the exact policy rule without changing Azure. I’m now adding parameters for the VM image publisher/offer/SKU/version and a targeted message when Azure denies VM creation; after the edit I’ll run parser and analyzer checks.
+
+Generating patch (35 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors)|Out-Null; if($parseErrors.Count){throw ($parseErrors|Out-String)}; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings|Group-Object Severity,RuleName|Select-Object Name,Count|Format-Table -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+The first parser check caught a PowerShell interpolation edge case in the new error text: the colon immediately after `$ApplianceImageSku` is parsed as a drive-qualified variable. I’m fixing the interpolation with braces and rerunning the same focused validation.
+
+Generating patch (6 lines) in 
+
+
+```
+
+```
+
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors)|Out-Null; if($parseErrors.Count){throw ($parseErrors|Out-String)}; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings|Group-Object Severity,RuleName|Select-Object Name,Count|Format-Table -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+The script now parses cleanly, and the only analyzer results remain the seven pre-existing `Write-Host` warnings. I’m checking exact Az policy cmdlet parameter names so the next steps I give you will retrieve this specific assignment’s rule and parameters accurately in Cloud Shell, without making policy changes.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'Import-Module Az.Resources; Get-Command Get-AzPolicyAssignment,Get-AzPolicyDefinition -Syntax'
+
+Azure created the networking resources but blocked the VM at `New-AzVM`. The error identifies the enforcing policy as **Restrict-WindowsServer2022image**. The script requests `MicrosoftWindowsServer/WindowsServer/2022-datacenter-azure-edition:latest`, and that image is not allowed by the subscription policy. This is an Azure policy decision; changing the script cannot override it.
+
+I updated `setupsimlab.ps1` to make the VM image publisher, offer, SKU, and version configurable, and to report a clearer error if policy denies VM creation again. The defaults remain unchanged, so the script won’t silently substitute an unapproved image.
+
+**Next steps in Cloud Shell**
+
+1. Inspect the policy definition and assignment parameters:
+
+```powershell
+$assignment = Get-AzPolicyAssignment -Id '/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyAssignments/c5d3457623c753c0b7396c36'
+$definition = Get-AzPolicyDefinition -Id '/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/providers/Microsoft.Authorization/policyDefinitions/163064f9d47b5e16a8038d30'
+
+$assignment.Properties.Parameters | ConvertTo-Json -Depth 30
+$definition.Properties.Parameters | ConvertTo-Json -Depth 30
+$definition.Properties.PolicyRule | ConvertTo-Json -Depth 50
+```
+
+2. Ask the policy owner which Windows image is approved for this subscription and Azure Migrate appliance. If the approved image is compatible, upload the updated script and pass its exact publisher/offer/SKU/version with the new parameters. If policy requires the Server 2022 image, the authorized policy owner must approve an exception or update the policy.
+
+3. To run the remaining setup without attempting the blocked VM, use `-DeployApplianceVM:$false`. The VNet, NSG, peering, and DNS resources from the previous run are already present; don’t delete them just to retry.
+
+The edited script parses successfully and PSScriptAnalyzer reports zero errors. I did not make any Azure policy changes or run another deployment.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ./setupsimlab.ps1
+
+=== Loading Azure PowerShell modules ===
+
+=== Authenticating and selecting subscription ===
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+
+=== Validating the existing resource group ===
+Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Deployment location: westus2
+
+=== Validating address spaces ===
+
+=== Registering required resource providers ===
+
+=== Creating or updating the appliance NSG ===
+
+=== Creating outbound-only NAT Gateway for appliance updates and required public authentication endpoints ===
+
+=== Creating the simulated on-premises VNet ===
+
+=== Creating the Azure Migrate VNet ===
+
+=== Creating bidirectional VNet peering ===
+
+=== Creating Azure DNS Private Resolver ===
+
+=== Creating Azure DNS Private Resolver inbound endpoint ===
+
+=== Creating the Windows Server 2022 Azure Migrate appliance VM ===
+
+PowerShell credential request
+Enter a strong local administrator password for azmapp-lab01
+Password for user azureadmin: *********
+
+WARNING: Upcoming breaking changes in the cmdlet 'New-AzVM' :
+The default VM size will change from 'Standard_D2s_v3' to 'Standard_D2s_v5'.
+- This change will take effect on '11/1/2025'
+- The change is expected to take effect in Az version : '15.0.0'
+- The change is expected to take effect in Az.Compute version : '11.0.0'
+Note : Go to https://aka.ms/azps-changewarnings for steps to suppress this breaking change warning, and other information on breaking changes in Azure PowerShell.
+WARNING: Since there is no standard storage account in the same region as the VM, new standard storage account, microrginfazma101007020, is created for boot diagnostics.
+Exception: /home/v-chengzhiz/setupsimlab.ps1:436
+Line |
+ 436 |  …             throw "Azure Policy blocked appliance VM '$ApplianceVmNam …
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Azure Policy blocked appliance VM 'azmapp-lab01' with image 'MicrosoftWindowsServer/WindowsServer/2022-datacenter-azure-edition:latest'. Query the
+     | Restrict-WindowsServer2022image policy in Azure Portal or with Get-AzPolicyAssignment/Get-AzPolicyDefinition, then rerun with the approved
+     | -ApplianceImagePublisher, -ApplianceImageOffer, -ApplianceImageSku, and -ApplianceImageVersion values. The VNets and networking resources created earlier remain
+     | deployed.
+PS /home/v-chengzhiz> 
+
+See the above log of execution, WindowsServer 2022 was not allowed, can we try WindowsServer 2025 for the Azure Migrate Appliance? 
+
+GitHub Copilot: I’ll verify two things before changing the deployment defaults: whether the Azure Migrate appliance supports Windows Server 2025, and whether your subscription policy actually permits that image. The policy name suggests it may target 2022 specifically, but an alternate SKU should only be used if both the appliance requirements and policy allow it.
+
+
+
+Read , lines 30 to 75
+
+Fetched 2 resources
+
+Read , lines 410 to 445
+
+Microsoft’s current Azure Migrate appliance documentation explicitly lists Windows Server 2022 **or Windows Server 2025** for the VMware appliance deployed with the PowerShell installer. So 2025 is a supported OS candidate; subscription policy still decides whether the Azure VM image itself is allowed. I’ll switch the script’s default to the Server 2025 Azure Edition SKU and remove the stale 2022-specific wording, then validate it.
+
+Generating patch (18 lines) in 
+
+
+```
+
+```
+The script now defaults to `2025-datacenter-azure-edition`, describes the appliance OS generically, and reports policy blocks without implying only the 2022 policy is relevant. I’m checking the PowerShell parse, analyzer results, and the effective image defaults before you upload it to Cloud Shell.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setupsimlab.ps1"),[ref]$tokens,[ref]$parseErrors); if($parseErrors.Count){throw ($parseErrors|Out-String)}; $sku=$ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq "ApplianceImageSku" }; $sku.Extent.Text; $findings=@(Invoke-ScriptAnalyzer -Path "./setupsimlab.ps1"); $findings|Group-Object Severity,RuleName|Select-Object Name,Count|Format-Table -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+Yes. Microsoft’s current [Azure Migrate appliance requirements](https://learn.microsoft.com/en-us/azure/migrate/migrate-appliance) list Windows Server 2025 as supported for the VMware appliance deployed using the PowerShell installer.
+
+I changed `setupsimlab.ps1` to default to `2025-datacenter-azure-edition` and removed wording that assumed the VM would use Server 2022. The script parses successfully, and PSScriptAnalyzer reports zero errors; the seven remaining warnings are about `Write-Host`.
+
+Upload the updated script to Cloud Shell and rerun it. The policy may still block the 2025 image if it permits only specific publisher/offer/SKU combinations; if so, ask your policy administrator which image is approved before trying another SKU. The network resources from previous attempts remain deployed, and the script is intended to reuse them.
+
+Made changes.
+
+User: See the deployed Azure Migrate Appliance's information in the attached screen snapshot, how to connect to this Azure Migrate Appliance Windows server 2025 by Window App in macbook pro
+
+GitHub Copilot: The screenshot shows the VM has private IP `10.20.1.4` and no VM-assigned public IP; `20.230.181.131` is the NAT Gateway’s outbound IP, so it cannot be used for inbound RDP. I’ll check the current Azure Bastion tunnel and Windows App connection steps, with particular attention to the NSG’s explicit deny rule that would otherwise block Bastion-to-VM RDP.
+
+
+
+Fetched 3 resources
+
+Azure Bastion supports native-client tunneling on Standard or Premium, but the VM’s NSG currently has an explicit deny for RDP from all other sources after allowing only `10.20.0.0/16`. That means a Bastion tunnel also needs a narrowly scoped allow from `AzureBastionSubnet`; I’m checking Microsoft’s exact tunnel syntax and Windows App’s host/port entry format so the steps are actionable.
+
+
+
+Fetched 3 resources
+
+The VM is running Windows Server 2025, but it has **no public IP on its network interface**. The `20.230.181.131` shown in the portal is the NAT Gateway’s outbound IP; don’t enter it in Windows App for RDP. The VM’s private IP is `10.20.1.4`, which your Mac cannot reach directly over the internet.
+
+To use **Windows App on your Mac**, route RDP through Azure Bastion:
+
+1. **Deploy or configure Azure Bastion** in the VM’s VNet, `azmpe-lab-sim-onprem-vnet`. For Windows App access, use **Standard or Premium** Bastion and enable **Native client support / tunneling**. Bastion needs a subnet named exactly `AzureBastionSubnet`, at least `/26`, and a Standard static public IP. Check for subnet address conflicts before choosing its address range.
+
+2. **Check the VM subnet’s NSG.** The setup script’s RDP allow rule permits source addresses in `10.20.0.0/16`. If the Bastion subnet is inside this VNet range, that rule should allow Bastion traffic to reach the VM on TCP 3389. Keep the VM without a public IP; avoid opening RDP to the internet.
+
+3. **On your Mac, open a terminal and authenticate Azure CLI** to the subscription that contains Bastion and the VM:
+
+```sh
+az login
+az account set --subscription 95642268-5116-484d-9b88-7dfce8c20ce4
+```
+
+Your tenant’s sign-in policy previously blocked a PowerShell sign-in, so `az login` may also require administrator-approved authentication. Enter credentials only in Microsoft’s sign-in UI.
+
+4. **Find the VM resource ID** and start a Bastion tunnel. Replace `<BastionName>` and `<BastionResourceGroup>` with the Bastion resource’s actual names:
+
+```sh
+VM_ID=$(az vm show \
+  --resource-group rg-infra-winmig-apac-v-chengzhiz-poc \
+  --name azmapp-lab01 \
+  --query id -o tsv)
+
+az network bastion tunnel \
+  --name <BastionName> \
+  --resource-group <BastionResourceGroup> \
+  --target-resource-id "$VM_ID" \
+  --resource-port 3389 \
+  --port 53389
+```
+
+Keep this command running while connected; it holds the tunnel open. Azure CLI 2.32 or later and Bastion’s native-client/tunneling feature are required.
+
+5. **Add the remote PC in Windows App.** Open Windows App, select **+ > Add PC**, enter `127.0.0.1:53389` as the PC name, and save/connect. Sign in with the local Windows account you created during VM deployment, `azureadmin`, and its password. Don’t post that password in chat.
+
+Bastion Standard/Premium is billable while deployed. For a quick connection without Windows App, you can instead use the VM’s **Connect > Bastion** option in the Azure Portal browser; that avoids the local tunnel, but it is a browser session.
+
+Microsoft’s [Bastion native-client guidance](https://learn.microsoft.com/en-us/azure/bastion/native-client) and [Bastion NSG requirements](https://learn.microsoft.com/en-us/azure/bastion/bastion-nsg) cover the required configuration.
+
+User: VM_ID=$(az vm show \
+  --resource-group rg-infra-winmig-apac-v-chengzhiz-poc \
+  --name azmapp-lab01 \
+  --query id -o tsv)
+
+az network bastion tunnel \
+  --name bastion01 \
+  --resource-group rg-infra-winmig-apac-v-chengzhiz-poc \
+  --target-resource-id "$VM_ID" \
+  --resource-port 3389 \
+  --port 53389
+
+  how to run the above script in Azure Portal Cloud shell?
+
+GitHub Copilot: You **can’t run `az network bastion tunnel` from Azure Portal Cloud Shell**. The tunnel command is not supported in Cloud Shell, and it needs to open a local port on the same Mac where Windows App will connect.
+
+Your attached file is named `setrdpip.ps1`, but its contents use **Bash syntax**, not PowerShell. To connect with Windows App:
+
+1. Install Azure CLI on your Mac and sign in from the Mac’s Terminal. Your earlier `az login` returned exit code 127, which means Azure CLI isn’t installed or isn’t on your `PATH`. The Cloud Shell’s Azure login does not sign your Mac’s Azure CLI in automatically.
+2. In macOS Terminal (zsh is fine), run the commands below. Keep this terminal open while you use the connection:
+
+```sh
+az login
+az account set --subscription 95642268-5116-484d-9b88-7dfce8c20ce4
+
+VM_ID=$(az vm show \
+  --resource-group rg-infra-winmig-apac-v-chengzhiz-poc \
+  --name azmapp-lab01 \
+  --query id -o tsv)
+
+az network bastion tunnel \
+  --name bastion01 \
+  --resource-group rg-infra-winmig-apac-v-chengzhiz-poc \
+  --target-resource-id "$VM_ID" \
+  --resource-port 3389 \
+  --port 53389
+```
+
+3. In Windows App on your Mac, add a PC with the address **`127.0.0.1:53389`**, then connect using the Windows account and password for the VM.
+
+This requires Bastion `bastion01` to exist in the named resource group, use Standard or Premium SKU, and have native-client support enabled. The VM subnet’s NSG must also allow TCP 3389 from the Bastion subnet. For browser-based access instead, open the VM in Azure Portal and use **Connect > Bastion**; that path can be launched from the portal without the local tunnel.
+
+Microsoft’s [Bastion native-client guide](https://learn.microsoft.com/en-us/azure/bastion/native-client) documents the tunnel prerequisites.
+
+User: mac@MAA-x86-15-02 lab % az login
+zsh: command not found: az
+mac@MAA-x86-15-02 lab % 
+
+GitHub Copilot: `zsh: command not found: az` means Azure CLI is missing from your Mac; that’s separate from the Azure Cloud Shell, which has its own `az` command. I’ll check the local Python and package-manager options for a supported install path, then either set it up locally or give you the exact installer steps if this environment can’t install it reliably.
+
+Ran terminal command:  python3 --version; python3 -m pip --version; command -v brew || true; command -v pipx || true; command -v az || true; uname -m; sw_vers -productVersion
+
+
+
+Fetched https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-macos
+
+`zsh: command not found: az` means Azure CLI is **not installed on your Mac**. The `az` command available in Azure Cloud Shell is separate; Cloud Shell can’t host the local Bastion tunnel that Windows App needs.
+
+On your Mac, install Azure CLI using Microsoft’s supported macOS method. Microsoft currently recommends Homebrew and requires macOS 13 or later; your macOS version meets that requirement.
+
+1. Install Homebrew by following its instructions at [brew.sh](https://brew.sh).
+2. In a **new macOS Terminal** window, install Azure CLI:
+
+```sh
+brew update
+brew install --cask azure-cli
+```
+
+3. Check that it’s available, then sign in and select the subscription:
+
+```sh
+az version
+az login
+az account set --subscription 95642268-5116-484d-9b88-7dfce8c20ce4
+```
+
+4. Run your tunnel commands in that same Mac Terminal. Keep the tunnel command running while you connect Windows App to `127.0.0.1:53389`.
+
+Your snippet is Bash/zsh, despite the `.ps1` filename; paste it into macOS Terminal, or save it with a `.sh` extension. Also confirm that `bastion01` exists, is Standard or Premium with native-client support enabled, and can reach the VM on RDP port 3389.
+
+If local Azure CLI sign-in is blocked by your organization’s Conditional Access policy, use the Azure Portal’s **VM > Connect > Bastion** browser connection instead. The local tunnel requires the CLI to authenticate on your Mac.
+
+User: mac@MAA-x86-15-02 lab % /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+Homebrew on macOS is only supported on Apple Silicon processors!
+mac@MAA-x86-15-02 lab % 
+
+GitHub Copilot: The Homebrew installer is stopping because this Mac is **Intel (`x86_64`)**, and the current Homebrew installer in your environment supports only Apple Silicon. That’s why Azure CLI isn’t installed, and `az` cannot run locally.
+
+For now, use the Azure Portal’s browser-based Bastion connection instead:
+
+1. In the portal, open VM **azmapp-lab01**.
+2. Select **Connect > Bastion**.
+3. Select the Bastion host and connect using the VM’s local account, `azureadmin`, and the password you set when creating it.
+
+This avoids installing Azure CLI and does not require a public IP on the VM. It opens the desktop in the browser, not Windows App.
+
+Your `setrdpip.ps1` content is Bash/zsh syntax, and the `az network bastion tunnel` command must run on a supported local host, not Azure Cloud Shell. The Azure CLI path for a Windows App tunnel on this Intel Mac is blocked by the current installer-support limitation; don’t expose RDP publicly as a workaround.
+
+User: to change the setrdpip.ps1, make it work well in Cloud shell of Azure portal
+
+GitHub Copilot: I’ll adapt `setrdpip.ps1` into a PowerShell Cloud Shell helper, but there’s an important platform limit: `az network bastion tunnel` cannot run in Cloud Shell because the tunnel must terminate on your Mac for Windows App to reach it. The Cloud Shell version can still verify the subscription, VM, and Bastion configuration and give you the supported browser-connect path; I’ll inspect the current file, replace the Bash snippet, and test its PowerShell syntax locally.
+
+Read 
+
+The current file is only a Bash tunnel snippet, so it won’t run as a `.ps1` in Cloud Shell. I’m replacing it with a PowerShell preflight script that uses Cloud Shell’s Azure CLI to verify the selected subscription, VM, and Bastion host, then clearly distinguishes the portal-browser connection from the Mac-local tunnel that Cloud Shell cannot host.
+
+Generating patch (3 lines) in 
+
+Generating patch (77 lines) in 
+
+
+```
+
+```
+The file is now PowerShell rather than Bash, and it deliberately avoids starting an unsupported Cloud Shell tunnel. I’m validating the parser and analyzer now; I’ll also check the script’s resource queries for straightforward Cloud Shell compatibility before closing out.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setrdpip.ps1"),[ref]$tokens,[ref]$parseErrors)|Out-Null; if($parseErrors.Count){throw ($parseErrors|Out-String)}; $findings=@(Invoke-ScriptAnalyzer -Path "./setrdpip.ps1"); $findings|Select-Object Line,RuleName,Severity,Message|Format-Table -Wrap -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+Read 
+
+The helper passes PowerShell parsing and has no analyzer errors; only `Write-Host` presentation warnings remain, which are intentional for an interactive Cloud Shell report. I’m doing one final mocked run of the Azure CLI calls to verify the subscription, VM, and Bastion output path without contacting or changing Azure.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'function az { $global:LASTEXITCODE=0; if($args[0] -eq "account" -and $args[1] -eq "show" -and $args -contains "tsv"){"95642268-5116-484d-9b88-7dfce8c20ce4"} elseif($args[0] -eq "account" -and $args[1] -eq "show"){"{`"name`":`"Azure Sponsorship`",`"id`":`"95642268-5116-484d-9b88-7dfce8c20ce4`"}"} elseif($args[0] -eq "vm"){"{`"id`":`"/subscriptions/test/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/azmapp-lab01`",`"privateIps`":`"10.20.1.4`",`"powerState`":`"VM running`"}"} elseif($args[0] -eq "network"){"{`"id`":`"/subscriptions/test/resourceGroups/rg/providers/Microsoft.Network/bastionHosts/bastion01`",`"sku`":`"Standard`",`"state`":`"Succeeded`",`"enableTunneling`":true}"} }; . ./setrdpip.ps1'
+
+I replaced the Bash snippet in `setrdpip.ps1` with a PowerShell helper for Azure Portal Cloud Shell. It selects the specified subscription, checks the VM and `bastion01`, and reports their IDs, private IP, state, SKU, and tunneling setting. It **does not create or modify resources**.
+
+Cloud Shell cannot run `az network bastion tunnel` for Windows App because that tunnel must run on the Mac. The helper instead tells you to connect in the portal using **VM > Connect > Bastion**. Upload the updated file to Cloud Shell and run:
+
+```powershell
+./setrdpip.ps1
+```
+
+Validation passed: the script parses, PSScriptAnalyzer reports zero errors, and a mocked run verified the reporting flow. I did not make live Azure calls.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ./setrdpip.ps1
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+VM: azmapp-lab01
+Resource ID: /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Compute/virtualMachines/azmapp-lab01
+Private IP: 10.20.1.4
+Power state: VM running
+WARNING: Preview version of extension is disabled by default for extension installation, enabled for modules without stable versions. 
+WARNING: Please run 'az config set extension.dynamic_install_allow_preview=true or false' to config it specifically. 
+
+WARNING: Run 'az config set extension.use_dynamic_install=yes_without_prompt' to allow installing extensions without prompt.
+ERROR: (ResourceNotFound) The Resource 'Microsoft.Network/bastionHosts/bastion01' under resource group 'rg-infra-winmig-apac-v-chengzhiz-poc' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Code: ResourceNotFound
+Message: The Resource 'Microsoft.Network/bastionHosts/bastion01' under resource group 'rg-infra-winmig-apac-v-chengzhiz-poc' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Exception: /home/v-chengzhiz/setrdpip.ps1:24
+Line |
+  24 |          throw "Azure CLI failed: az $($Arguments -join ' ')"
+     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Azure CLI failed: az network bastion show --resource-group rg-infra-winmig-apac-v-chengzhiz-poc --name bastion01 --query
+     | {id:id,sku:sku.name,state:provisioningState,enableTunneling:properties.enableTunneling} -o json
+PS /home/v-chengzhiz> 
+
+GitHub Copilot: The helper verified the VM, then Azure returned `ResourceNotFound` for `bastion01`; that means there is no Bastion host with that name in the specified resource group (or it’s named/stored elsewhere). I’ll update the Cloud Shell script to list Bastion hosts in that group and give a clear next step instead of surfacing the generic CLI failure; it won’t create a Bastion host automatically because that incurs ongoing cost.
+
+Read 
+
+Generating patch (40 lines) in 
+
+
+```
+
+```
+The helper now treats a missing `bastion01` as a deployment/configuration issue, searches for Bastion hosts across the selected subscription, and distinguishes “wrong name/resource group” from “no Bastion deployed.” I’m testing both the no-host path and parser/analyzer status with a mocked Azure CLI, so nothing changes in the subscription.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setrdpip.ps1"),[ref]$tokens,[ref]$parseErrors)|Out-Null; if($parseErrors.Count){throw ($parseErrors|Out-String)}; $findings=@(Invoke-ScriptAnalyzer -Path "./setrdpip.ps1"); $findings|Group-Object Severity,RuleName|Select-Object Name,Count|Format-Table -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'function az { $global:LASTEXITCODE=0; if($args[0] -eq "account" -and $args[1] -eq "show" -and $args -contains "tsv"){"95642268-5116-484d-9b88-7dfce8c20ce4"} elseif($args[0] -eq "account" -and $args[1] -eq "show"){"{`"name`":`"Azure Sponsorship`",`"id`":`"95642268-5116-484d-9b88-7dfce8c20ce4`"}"} elseif($args[0] -eq "vm"){"{`"id`":`"vmid`",`"privateIps`":`"10.20.1.4`",`"powerState`":`"VM running`"}"} elseif($args[0] -eq "network" -and $args[2] -eq "show"){$global:LASTEXITCODE=1; "ResourceNotFound"} elseif($args[0] -eq "network" -and $args[2] -eq "list"){"[]"} }; try { . ./setrdpip.ps1 } catch { if($_.Exception.Message -notmatch "No Azure Bastion host exists in subscription"){throw}; "PASS: missing Bastion produces targeted no-host guidance" }'
+
+The VM check succeeded. The failure is that **no Bastion host named `bastion01` exists in `rg-infra-winmig-apac-v-chengzhiz-poc`**. The Azure CLI extension warnings are separate; `ResourceNotFound` is the blocking issue.
+
+I updated `setrdpip.ps1` so it now searches the selected subscription when the configured Bastion host is missing. It will list any Bastion hosts it finds and tell you whether to use a different name/resource group or deploy one. It **does not deploy Bastion automatically**, since Bastion incurs ongoing charges.
+
+To continue, deploy an Azure Bastion host in the VM’s VNet, `azmpe-lab-sim-onprem-vnet`. It needs an `AzureBastionSubnet` subnet with an available, non-overlapping range (at least `/26`) and a public IP. Use Standard or Premium and enable native-client tunneling if you plan to connect through Windows App. Once deployed, rerun the helper; use `-BastionName` and `-BastionResourceGroupName` if the host has different values.
+
+The updated script parses successfully and reports zero analyzer errors. A mocked test verified the no-Bastion guidance. Cloud Shell can validate resources, but the tunnel itself must run on the same Mac as Windows App; for Cloud Shell, use the portal’s **VM > Connect > Bastion** browser connection after Bastion is deployed.
+
+Made changes.
+
+User: PS /home/v-chengzhiz> ./setrdpip.ps1
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+VM: azmapp-lab01
+Resource ID: /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Compute/virtualMachines/azmapp-lab01
+Private IP: 10.20.1.4
+Power state: VM running
+ERROR: (ResourceNotFound) The Resource 'Microsoft.Network/bastionHosts/bastion01' under resource group 'rg-infra-winmig-apac-v-chengzhiz-poc' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Code: ResourceNotFound
+Message: The Resource 'Microsoft.Network/bastionHosts/bastion01' under resource group 'rg-infra-winmig-apac-v-chengzhiz-poc' was not found. For more details please go to https://aka.ms/ARMResourceNotFoundFix
+Exception: /home/v-chengzhiz/setrdpip.ps1:82
+Line |
+  82 |      throw "No Azure Bastion host exists in subscription '$($subscript …
+     |      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | No Azure Bastion host exists in subscription '95642268-5116-484d-9b88-7dfce8c20ce4'. Create one in the VM's VNet before using portal Bastion or a native tunnel.
+     | Creating Bastion incurs ongoing charges. Original error: Azure CLI failed: az network bastion show --resource-group rg-infra-winmig-apac-v-chengzhiz-poc --name
+     | bastion01 --query {id:id,sku:sku.name,state:provisioningState,enableTunneling:properties.enableTunneling} -o json
+PS /home/v-chengzhiz> 
+
+GitHub Copilot: That output confirms the helper is doing the right check: the VM is healthy, but no Bastion resource exists in the subscription, so neither portal Bastion nor a native tunnel can connect yet. I’ll verify the current Azure CLI creation syntax and Bastion subnet requirements, then give you the Cloud Shell commands; creating Bastion is billable, so I won’t deploy it without your go-ahead.
+
+
+
+Fetched 2 resources
+
+Read , lines 55 to 96
+
+Microsoft’s configuration guidance confirms the missing prerequisite: a dedicated `AzureBastionSubnet` of at least `/26`, plus a Standard static public IP for a regular Bastion host. I’m checking the exact Azure CLI create flags before giving you commands, and I’ll keep the subnet step conditional so it won’t collide with existing VNet ranges.
+
+
+
+Fetched https://learn.microsoft.com/en-us/cli/azure/network/bastion
+
+The latest run confirms there is **no Azure Bastion host anywhere in the selected subscription**. The VM is running, but Bastion must be deployed before either portal Bastion or a native tunnel can connect. The Azure CLI extension warning is not the cause; `ResourceNotFound` is.
+
+In Cloud Shell PowerShell, first check the VNet’s existing address ranges and subnets:
+
+```powershell
+$rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+$vnet = 'azmpe-lab-sim-onprem-vnet'
+
+az network vnet show -g $rg -n $vnet --query "{addressSpaces:addressSpace.addressPrefixes,subnets:subnets[].{name:name,prefix:addressPrefix}}" -o jsonc
+```
+
+If `10.20.255.0/26` is within the VNet address space and does **not** overlap any listed subnet, create the required Bastion subnet, Standard public IP, and Standard Bastion host:
+
+```powershell
+az network vnet subnet create --resource-group $rg --vnet-name $vnet --name AzureBastionSubnet --address-prefixes 10.20.255.0/26
+
+az network public-ip create --resource-group $rg --name bastion01-pip --sku Standard --allocation-method Static --location westus2
+
+az network bastion create --name bastion01 --resource-group $rg --vnet-name $vnet --public-ip-address bastion01-pip --location westus2 --sku Standard --enable-tunneling true
+```
+
+**These commands create billable Azure resources; Bastion incurs ongoing charges while deployed.** Check your subscription’s policy and cost before running them. Bastion deployment can take several minutes.
+
+After it finishes, rerun `setrdpip.ps1`. In the portal, connect using **VM > Connect > Bastion**. Cloud Shell still cannot host the tunnel needed by Windows App on your Mac; that tunnel must run locally.
+
+User: PS /home/v-chengzhiz> $rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+PS /home/v-chengzhiz> $vnet = 'azmpe-lab-sim-onprem-vnet'
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network vnet show -g $rg -n $vnet --query "{addressSpaces:addressSpace.addressPrefixes,subnets:subnets[].{name:name,prefix:addressPrefix}}" -o jsonc
+{
+  "addressSpaces": [
+    "10.20.0.0/16"
+  ],
+  "subnets": [
+    {
+      "name": "snet-appliance",
+      "prefix": "10.20.1.0/24"
+    }
+  ]
+}
+PS /home/v-chengzhiz>
+
+GitHub Copilot: That output confirms `10.20.255.0/26` is inside the VNet’s `10.20.0.0/16` address space and doesn’t overlap the existing `snet-appliance` subnet. You can now create Bastion resources in Cloud Shell PowerShell:
+
+```powershell
+$rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+$vnet = 'azmpe-lab-sim-onprem-vnet'
+
+az extension add --name bastion
+
+az network vnet subnet create `
+  --resource-group $rg `
+  --vnet-name $vnet `
+  --name AzureBastionSubnet `
+  --address-prefixes 10.20.255.0/26
+
+az network public-ip create `
+  --resource-group $rg `
+  --name bastion01-pip `
+  --sku Standard `
+  --allocation-method Static `
+  --location westus2
+
+az network bastion create `
+  --name bastion01 `
+  --resource-group $rg `
+  --vnet-name $vnet `
+  --public-ip-address bastion01-pip `
+  --location westus2 `
+  --sku Standard `
+  --enable-tunneling true
+```
+
+Bastion deployment can take several minutes and incurs ongoing charges. After it completes, verify it:
+
+```powershell
+az network bastion show -g $rg -n bastion01 `
+  --query "{name:name,sku:sku.name,state:provisioningState,enableTunneling:properties.enableTunneling}" `
+  -o table
+```
+
+Then rerun `setrdpip.ps1` and connect in the portal using **VM > Connect > Bastion**.
+
+User: PS /home/v-chengzhiz> $rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+PS /home/v-chengzhiz> $vnet = 'azmpe-lab-sim-onprem-vnet'
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network vnet show -g $rg -n $vnet --query "{addressSpaces:addressSpace.addressPrefixes,subnets:subnets[].{name:name,prefix:addressPrefix}}" -o jsonc
+{
+  "addressSpaces": [
+    "10.20.0.0/16"
+  ],
+  "subnets": [
+    {
+      "name": "snet-appliance",
+      "prefix": "10.20.1.0/24"
+    }
+  ]
+}
+PS /home/v-chengzhiz> $rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+PS /home/v-chengzhiz> $vnet = 'azmpe-lab-sim-onprem-vnet'
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az extension add --name bastion
+Extension 'bastion' 1.4.3 is already installed.
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network vnet subnet create `
+>>   --resource-group $rg `
+>>   --vnet-name $vnet `
+>>   --name AzureBastionSubnet `
+>>   --address-prefixes 10.20.255.0/26
+{
+  "addressPrefix": "10.20.255.0/26",
+  "delegations": [],
+  "etag": "W/\"16623238-7cec-4373-b48e-b5ea5b700a14\"",
+  "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-sim-onprem-vnet/subnets/AzureBastionSubnet",
+  "name": "AzureBastionSubnet",
+  "privateEndpointNetworkPolicies": "Disabled",
+  "privateLinkServiceNetworkPolicies": "Enabled",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc",
+  "type": "Microsoft.Network/virtualNetworks/subnets"
+}
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network public-ip create `
+>>   --resource-group $rg `
+>>   --name bastion01-pip `
+>>   --sku Standard `
+>>   --allocation-method Static `
+>>   --location westus2
+[Coming breaking change] In the coming release, the default behavior will be changed as follows when sku is Standard and zone is not provided: For zonal regions, you will get a zone-redundant IP indicated by zones:["1","2","3"]; For non-zonal regions, you will get a non zone-redundant IP indicated by zones:null.
+{
+  "publicIp": {
+    "ddosSettings": {
+      "protectionMode": "VirtualNetworkInherited"
+    },
+    "etag": "W/\"64900bb6-9616-40ca-b7b6-82ef4991ac00\"",
+    "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/publicIPAddresses/bastion01-pip",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": "20.115.161.101",
+    "ipTags": [
+      {
+        "ipTagType": "FirstPartyUsage",
+        "tag": "/Unprivileged"
+      }
+    ],
+    "location": "westus2",
+    "name": "bastion01-pip",
+    "provisioningState": "Succeeded",
+    "publicIPAddressVersion": "IPv4",
+    "publicIPAllocationMethod": "Static",
+    "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc",
+    "resourceGuid": "f1c4d310-93a5-4efa-944c-56f221964128",
+    "sku": {
+      "name": "Standard",
+      "tier": "Regional"
+    },
+    "type": "Microsoft.Network/publicIPAddresses"
+  }
+}
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network bastion create `
+>>   --name bastion01 `
+>>   --resource-group $rg `
+>>   --vnet-name $vnet `
+>>   --public-ip-address bastion01-pip `
+>>   --location westus2 `
+>>   --sku Standard `
+>>   --enable-tunneling true
+ / Running ..
+ \ Running ..
+{
+  "disableCopyPaste": false,
+  "dnsName": "bst-701c6d64-f377-412e-a7a7-c32681b959aa.bastion.azure.com",
+  "enableFileCopy": false,
+  "enableIpConnect": false,
+  "enableKerberos": false,
+  "enableSessionRecording": false,
+  "enableShareableLink": false,
+  "enableTunneling": true,
+  "etag": "W/\"17c69b71-2d2d-4225-a672-0caac8eeef56\"",
+  "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/bastionHosts/bastion01",
+  "ipConfigurations": [
+    {
+      "etag": "W/\"17c69b71-2d2d-4225-a672-0caac8eeef56\"",
+      "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/bastionHosts/bastion01/bastionHostIpConfigurations/bastion_ip_config",
+      "name": "bastion_ip_config",
+      "privateIPAllocationMethod": "Dynamic",
+      "provisioningState": "Succeeded",
+      "publicIPAddress": {
+        "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/publicIPAddresses/bastion01-pip",
+        "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc"
+      },
+      "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc",
+      "subnet": {
+        "id": "/subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-sim-onprem-vnet/subnets/AzureBastionSubnet",
+        "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc"
+      },
+      "type": "Microsoft.Network/bastionHosts/bastionHostIpConfigurations"
+    }
+  ],
+  "location": "westus2",
+  "name": "bastion01",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "rg-infra-winmig-apac-v-chengzhiz-poc",
+  "scaleUnits": 2,
+  "sku": {
+    "name": "Standard"
+  },
+  "tags": {},
+  "type": "Microsoft.Network/bastionHosts"
+}
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> ls
+Microsoft  setrdpip.ps1
+PS /home/v-chengzhiz> ./setrdpip.ps1
+Subscription: Microsoft Azure Sponsorship-Factory [95642268-5116-484d-9b88-7dfce8c20ce4]
+VM: azmapp-lab01
+Resource ID: /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Compute/virtualMachines/azmapp-lab01
+Private IP: 10.20.1.4
+Power state: VM running
+Bastion: bastion01
+Bastion SKU: Standard
+Bastion state: Succeeded
+Native tunneling enabled: 
+
+Cloud Shell cannot host 'az network bastion tunnel'; that tunnel must run on the same Mac as Windows App.
+To connect from this portal session, open VM 'azmapp-lab01' > Connect > Bastion and use the VM's local Windows credentials.
+
+For a Windows App connection, run the Bastion tunnel from a supported local machine with Azure CLI installed,
+then connect Windows App to 127.0.0.1:53389. Keep the local tunnel terminal open during the RDP session.
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> az network bastion show -g $rg -n bastion01 `
+>>   --query "{name:name,sku:sku.name,state:provisioningState,enableTunneling:properties.enableTunneling}" `
+>>   -o table
+Name       Sku       State
+---------  --------  ---------
+bastion01  Standard  Succeeded
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz>
+
+After deploying the Bastion, When utilizing Window App to connect to Azure Migrate Appliance VM by Bastion, it was failed(See the attaced screen snapshot), how to resolve the problem.
+
+GitHub Copilot: The screenshot’s Windows App target is `127.0.0.1:53389`. That address only works while an Azure Bastion tunnel is running **on your Mac**; a tunnel in Cloud Shell would listen on a different machine, and this Mac currently lacks `az`. I also noticed the helper is querying the tunnel flag from the wrong JSON path, so I’ll correct it and have Cloud Shell print the exact local tunnel command and connectivity prerequisites.
+
+Read 
+
+Generating patch (41 lines) in 
+
+
+```
+
+```
+I corrected the tunneling flag query (`enableTunneling` is returned at the top level) and added checks for Bastion provisioning state and Standard/Premium SKU. The Cloud Shell report now prints the exact Azure CLI tunnel command for the Mac, with the VM’s real resource ID; I’m validating syntax and exercising that output with mocked CLI responses.
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; $tokens=$null; $parseErrors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "./setrdpip.ps1"),[ref]$tokens,[ref]$parseErrors)|Out-Null; if($parseErrors.Count){throw ($parseErrors|Out-String)}; $findings=@(Invoke-ScriptAnalyzer -Path "./setrdpip.ps1"); $findings|Group-Object Severity,RuleName|Select-Object Name,Count|Format-Table -AutoSize; "ParseErrors=0; AnalyzerErrors=$(@($findings|Where-Object Severity -eq "Error").Count)"; if(@($findings|Where-Object Severity -eq "Error").Count){exit 1}'
+
+Ran terminal command:  pwsh -NoLogo -NoProfile -Command 'function az { $global:LASTEXITCODE=0; if($args[0] -eq "account" -and $args[1] -eq "show" -and $args -contains "tsv"){"95642268-5116-484d-9b88-7dfce8c20ce4"} elseif($args[0] -eq "account" -and $args[1] -eq "show"){"{`"name`":`"Azure Sponsorship`",`"id`":`"95642268-5116-484d-9b88-7dfce8c20ce4`"}"} elseif($args[0] -eq "vm"){"{`"id`":`"/subscriptions/test/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/azmapp-lab01`",`"privateIps`":`"10.20.1.4`",`"powerState`":`"VM running`"}"} elseif($args[0] -eq "network"){"{`"id`":`"bastionid`",`"sku`":`"Standard`",`"state`":`"Succeeded`",`"enableTunneling`":true}"} }; . ./setrdpip.ps1'
+
+Your Bastion deployment succeeded: it is **Standard**, **Succeeded**, and tunneling is enabled. The Windows App error `0x204` is most likely because its saved address, `127.0.0.1:53389`, needs a tunnel running on your Mac. The Azure Cloud Shell tunnel runs on a different machine and cannot serve Windows App on your Mac.
+
+I also fixed `setrdpip.ps1`: it now reads the tunneling setting from the correct field and prints the exact tunnel command using your VM’s resource ID.
+
+**Fastest option:** In Azure Portal, open `azmapp-lab01` and select **Connect > Bastion**. That connects in the browser and avoids needing Azure CLI on the Mac.
+
+**To use Windows App:** install Azure CLI on the Mac or use another supported computer, sign in there, and run the tunnel command printed by the updated helper. Leave that terminal open, then connect Windows App to `127.0.0.1:53389`. Your Mac previously reported `az: command not found`, and Homebrew’s installer rejected this Intel Mac, so the local tunnel cannot work until Azure CLI is available locally. Don’t use the NAT Gateway public IP as the RDP address; it is for outbound traffic, not inbound access.
+
+The updated helper passes PowerShell parsing and has zero analyzer errors.
+
+Made changes.
+
+User: According to the downloaded DNS Settings named DnsSettings_mp66_Sat Oct 10 2026.txt, How to validate from the appliance VM that each Azure Migrate FQDN resolves to its private endpoint IP and TCP 443 succeeds step by step in detail?
+
+GitHub Copilot: Run these tests **inside the appliance VM**, in a PowerShell window. Connect through **Azure Portal > VM `azmapp-lab01` > Connect > Bastion**; the tests must run on the VM, not in Cloud Shell or on the Mac. Open PowerShell normally; administrator privileges aren’t required for these checks.
+
+**1. Check DNS resolution and TCP 443**
+
+Paste this block into the VM’s PowerShell session. It checks every hostname and IP from `DnsSettings_mp66_Sat Oct 10 2026.txt`:
+
+```powershell
+$checks = @(
+    [pscustomobject]@{ Fqdn = '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.4' }
+    [pscustomobject]@{ Fqdn = '3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.6' }
+    [pscustomobject]@{ Fqdn = '618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.13' }
+    [pscustomobject]@{ Fqdn = '5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com'; ExpectedIp = '10.30.1.12' }
+    [pscustomobject]@{ Fqdn = 'mp661572kv.vault.azure.net'; ExpectedIp = '10.30.1.7' }
+    [pscustomobject]@{ Fqdn = 'mp665518usa.blob.core.windows.net'; ExpectedIp = '10.30.1.5' }
+)
+
+$results = foreach ($item in $checks) {
+    $addresses = @()
+    $dnsError = $null
+
+    try {
+        $answers = Resolve-DnsName -Name $item.Fqdn -Type A -DnsOnly -ErrorAction Stop
+        $addresses = @(
+            $answers |
+                Where-Object Type -eq 'A' |
+                Select-Object -ExpandProperty IPAddress -Unique
+        )
+    } catch {
+        $dnsError = $_.Exception.Message
+    }
+
+    $tcpSucceeded = $false
+    $remoteAddress = ''
+    try {
+        $tcp = Test-NetConnection -ComputerName $item.Fqdn -Port 443 -InformationLevel Detailed -WarningAction SilentlyContinue
+        $tcpSucceeded = $tcp.TcpTestSucceeded
+        $remoteAddress = [string]$tcp.RemoteAddress
+    } catch {
+        $tcpSucceeded = $false
+    }
+
+    [pscustomobject]@{
+        Fqdn         = $item.Fqdn
+        ExpectedIP   = $item.ExpectedIp
+        ResolvedIPs  = $addresses -join ', '
+        DNSMatches   = ($addresses -contains $item.ExpectedIp)
+        DNSQueryError = $dnsError
+        TCP443       = $tcpSucceeded
+        TCPRemoteIP  = $remoteAddress
+    }
+}
+
+$results | Format-Table -AutoSize -Wrap
+```
+
+For each row, `DNSMatches` should be `True` and `TCP443` should be `True`. `TCPRemoteIP` should be one of the listed private endpoint addresses. DNS may show CNAME records as well as the final A record; this check compares the final A-record answers with the downloaded IP.
+
+**2. Confirm HTTPS/TLS connectivity**
+
+A successful TCP check proves a connection to port 443, but does not by itself confirm TLS. The VM should have `curl.exe` available. Run:
+
+```powershell
+foreach ($item in $checks) {
+    Write-Host "`nTesting HTTPS: $($item.Fqdn)"
+    & curl.exe --silent --show-error --output NUL --write-out "HTTP %{http_code}`n" --connect-timeout 10 --max-time 20 "https://$($item.Fqdn)/"
+    Write-Host "curl exit code: $LASTEXITCODE"
+}
+```
+
+An HTTP status such as `200`, `403`, or `404` still indicates that the server was reached and returned an HTTPS response; the service may not support a request to `/`. A `curl` exit code of `0` is the expected transport/TLS result. An exit code other than `0`, especially with certificate, name-resolution, or timeout errors, needs investigation.
+
+**If DNS doesn’t match**
+
+First inspect the DNS servers configured on the VM:
+
+```powershell
+Get-DnsClientServerAddress -AddressFamily IPv4
+```
+
+For these names to resolve to the listed private endpoint IPs, the Azure Migrate private DNS zones/records need to be configured and linked so they’re visible to the VM’s VNet. If the VM uses custom DNS, that DNS server needs suitable forwarding/conditional-forwarding to the Azure DNS Private Resolver. Don’t replace the VM’s DNS settings without checking the VNet’s intended DNS design.
+
+If DNS matches but TCP 443 fails, check the VM’s outbound NSG/routing and the private endpoint configuration. If TCP succeeds but `curl.exe` fails, use its specific TLS or certificate error to narrow down the cause. These checks validate name resolution and network/TLS reachability; they don’t validate Azure Migrate appliance registration or authentication.
+
+User: PS C:\Users\azureadmin> $checks = @(
+    [pscustomobject]@{ Fqdn = '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.4' }
+    [pscustomobject]@{ Fqdn = '3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.6' }
+    [pscustomobject]@{ Fqdn = '618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com'; ExpectedIp = '10.30.1.13' }
+    [pscustomobject]@{ Fqdn = '5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com'; ExpectedIp = '10.30.1.12' }
+    [pscustomobject]@{ Fqdn = 'mp661572kv.vault.azure.net'; ExpectedIp = '10.30.1.7' }
+    [pscustomobject]@{ Fqdn = 'mp665518usa.blob.core.windows.net'; ExpectedIp = '10.30.1.5' }
+)
+
+$results = foreach ($item in $checks) {
+    $addresses = @()
+    $dnsError = $null
+
+    try {
+        $answers = Resolve-DnsName -Name $item.Fqdn -Type A -DnsOnly -ErrorAction Stop
+        $addresses = @(
+            $answers |
+                Where-Object Type -eq 'A' |
+                Select-Object -ExpandProperty IPAddress -Unique
+        )
+    } catch {
+        $dnsError = $_.Exception.Message
+    }
+
+    $tcpSucceeded = $false
+    $remoteAddress = ''
+    try {
+        $tcp = Test-NetConnection -ComputerName $item.Fqdn -Port 443 -InformationLevel Detailed -WarningAction SilentlyContinue
+        $tcpSucceeded = $tcp.TcpTestSucceeded
+        $remoteAddress = [string]$tcp.RemoteAddress
+    } catch {
+        $tcpSucceeded = $false
+    }
+
+    [pscustomobject]@{
+        Fqdn         = $item.Fqdn
+        ExpectedIP   = $item.ExpectedIp
+        ResolvedIPs  = $addresses -join ', '
+        DNSMatches   = ($addresses -contains $item.ExpectedIp)
+        DNSQueryError = $dnsError
+        TCP443       = $tcpSucceeded
+        TCPRemoteIP  = $remoteAddress
+    }
+}
+
+$results | Format-Table -AutoSize -Wrap
+
+Fqdn                                                                                            ExpectedIP ResolvedIPs                        
+----                                                                                            ---------- -----------                        
+034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com    10.30.1.4  172.197.137.2                      
+3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com      10.30.1.6  20.17.90.252                       
+618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com 10.30.1.13 172.197.136.66                     
+5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com                10.30.1.12                                    
+mp661572kv.vault.azure.net                                                                      10.30.1.7  172.197.132.24, 20.17.120.39,      
+                                                                                                           20.17.120.38                       
+mp665518usa.blob.core.windows.net                                                               10.30.1.5  20.60.103.196                      
+
+
+
+PS C:\Users\azureadmin> foreach ($item in $checks) {
+    Write-Host "`nTesting HTTPS: $($item.Fqdn)"
+    & curl.exe --silent --show-error --output NUL --write-out "HTTP %{http_code}`n" --connect-timeout 10 --max-time 20 "https://$($item.Fqdn)/"
+    Write-Host "curl exit code: $LASTEXITCODE"
+}
+
+Testing HTTPS: 034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com
+HTTP 404
+curl exit code: 0
+
+Testing HTTPS: 3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com
+HTTP 404
+curl exit code: 0
+
+Testing HTTPS: 618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com
+HTTP 404
+curl exit code: 0
+
+Testing HTTPS: 5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com
+curl.exe : curl: (6) Could not resolve host: 5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com
+At line:3 char:5
++     & curl.exe --silent --show-error --output NUL --write-out "HTTP % ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (curl: (6) Could...indowsazure.com:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+HTTP 000
+curl exit code: 6
+
+Testing HTTPS: mp661572kv.vault.azure.net
+HTTP 404
+curl exit code: 0
+
+Testing HTTPS: mp665518usa.blob.core.windows.net
+HTTP 400
+curl exit code: 0
+
+PS C:\Users\azureadmin> Get-DnsClientServerAddress -AddressFamily IPv4
+
+InterfaceAlias               Interface Address ServerAddresses                                                                                
+                             Index     Family                                                                                                 
+--------------               --------- ------- ---------------                                                                                
+Ethernet                             6 IPv4    {168.63.129.16}                                                                                
+Loopback Pseudo-Interface 1          1 IPv4    {}                                                                                             
+
+
+
+PS C:\Users\azureadmin> 
+
+GitHub Copilot: The DNS test shows that the VM can reach some services over HTTPS, but it is **not resolving the downloaded names to their expected private endpoint IPs**:
+
+- The first three FQDNs resolved to public IPs instead of `10.30.1.4`, `.6`, and `.13`.
+- The ASR FQDN did not resolve at all.
+- Key Vault and Blob also resolved to public IPs instead of `10.30.1.7` and `.5`.
+- `curl` receiving HTTP `404` or `400` with exit code `0` means it reached an HTTPS service; it does **not** show that it used the private endpoint. It reached the services via public DNS.
+- DNS server `168.63.129.16` is Azure’s normal DNS resolver for VMs. Don’t change it just because it appears here.
+
+The likely issue is missing or incomplete private DNS records/links for the simulated on-prem VNet. Azure Migrate’s private DNS zones need to contain the records from the downloaded DNS settings and be linked to both `azmpe-lab-migrate-vnet` and `azmpe-lab-sim-onprem-vnet`. The DNS Private Resolver inbound IP is for DNS forwarding from networks that need to query Azure; it is not required as the VM’s DNS server.
+
+**1. Inspect the private DNS zones and links in Cloud Shell**
+
+```powershell
+$rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+$simVnet = 'azmpe-lab-sim-onprem-vnet'
+$migrateVnet = 'azmpe-lab-migrate-vnet'
+
+$zones = @(
+    az network private-dns zone list -o json |
+        ConvertFrom-Json |
+        Where-Object Name -match 'migration\.windowsazure\.com|siterecovery\.windowsazure\.com|vaultcore\.azure\.net|blob\.core\.windows\.net'
+)
+
+$zones | Select-Object Name, ResourceGroup | Format-Table -AutoSize
+
+foreach ($zone in $zones) {
+    Write-Host "`nZone: $($zone.Name)  Resource group: $($zone.ResourceGroup)"
+
+    az network private-dns record-set a list `
+        --resource-group $zone.ResourceGroup `
+        --zone-name $zone.Name `
+        --query '[].{Record:name,IPs:aRecords[].ipv4Address}' `
+        -o table
+
+    az network private-dns link vnet list `
+        --resource-group $zone.ResourceGroup `
+        --zone-name $zone.Name `
+        --query '[].{Link:name,VNet:virtualNetwork.id,State:provisioningState}' `
+        -o table
+}
+```
+
+Check that the A records correspond to the downloaded IPs and that each relevant zone has a virtual network link for both VNets. If no matching zones appear, or the required records aren’t present, **don’t create guessed DNS zones or records**. Identify the zones and records created during Azure Migrate project setup, or ask your Azure administrator to verify their configuration.
+
+**2. Link existing zones if needed**
+
+First retrieve the VNet resource IDs:
+
+```powershell
+$simVnetId = az network vnet show -g $rg -n $simVnet --query id -o tsv
+$migrateVnetId = az network vnet show -g $rg -n $migrateVnet --query id -o tsv
+```
+
+If a relevant zone has the records but is missing a link, create a link for that zone to the VM VNet and another to the Azure Migrate VNet. Replace `$zone` with the specific zone from the inspection output:
+
+```powershell
+az network private-dns link vnet create `
+    --resource-group $zone.ResourceGroup `
+    --zone-name $zone.Name `
+    --name link-sim-onprem `
+    --virtual-network $simVnetId `
+    --registration-enabled false
+
+az network private-dns link vnet create `
+    --resource-group $zone.ResourceGroup `
+    --zone-name $zone.Name `
+    --name link-migrate `
+    --virtual-network $migrateVnetId `
+    --registration-enabled false
+```
+
+Only create links that are missing; link names must be unique within each zone. These commands change Azure DNS configuration, so confirm the target zones and existing links before running them. If the zones are in another resource group or managed by a service, you’ll need the appropriate permissions there.
+
+**3. Retest from the appliance VM**
+
+After the links and records are correct, run this in the VM:
+
+```powershell
+Clear-DnsClientCache
+
+Resolve-DnsName `
+    -Name '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com' `
+    -Type A `
+    -Server 168.63.129.16
+```
+
+Repeat for all six names. The final A-record answers should include their downloaded private IPs. Then test TCP 443:
+
+```powershell
+Test-NetConnection `
+    -ComputerName '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com' `
+    -Port 443
+```
+
+A good result has the expected private IP in DNS and `TcpTestSucceeded : True`. For HTTPS, an HTTP `404` or `400` can still be normal for a service root URL; the key is that DNS selects the expected private IP and the TLS connection succeeds.
+
+User: PS /home/v-chengzhiz> $rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+PS /home/v-chengzhiz> $simVnet = 'azmpe-lab-sim-onprem-vnet'
+PS /home/v-chengzhiz> $migrateVnet = 'azmpe-lab-migrate-vnet'
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> $zones = @(
+>>     az network private-dns zone list -o json |
+>>         ConvertFrom-Json |
+>>         Where-Object Name -match 'migration\.windowsazure\.com|siterecovery\.windowsazure\.com|vaultcore\.azure\.net|blob\.core\.windows\.net'
+>> )
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> $zones | Select-Object Name, ResourceGroup | Format-Table -AutoSize
+
+name                                        resourceGroup
+----                                        -------------
+privatelink.blob.core.windows.net           rg-infra-winmig-apac-v-chengzhiz-poc
+privatelink.prod.migration.windowsazure.com rg-infra-winmig-apac-v-chengzhiz-poc
+privatelink.siterecovery.windowsazure.com   rg-infra-winmig-apac-v-chengzhiz-poc
+privatelink.vaultcore.azure.net             rg-infra-winmig-apac-v-chengzhiz-poc
+
+PS /home/v-chengzhiz> 
+PS /home/v-chengzhiz> foreach ($zone in $zones) {
+>>     Write-Host "`nZone: $($zone.Name)  Resource group: $($zone.ResourceGroup)"
+>> 
+>>     az network private-dns record-set a list `
+>>         --resource-group $zone.ResourceGroup `
+>>         --zone-name $zone.Name `
+>>         --query '[].{Record:name,IPs:aRecords[].ipv4Address}' `
+>>         -o table
+>> 
+>>     az network private-dns link vnet list `
+>>         --resource-group $zone.ResourceGroup `
+>>         --zone-name $zone.Name `
+>>         --query '[].{Link:name,VNet:virtualNetwork.id,State:provisioningState}' `
+>>         -o table
+>> }
+
+Zone: privatelink.blob.core.windows.net  Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Record
+-----------
+mp665518usa
+Link                                VNet                                                                                                                                                                        State
+----------------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ---------
+azmpe-lab-migrate-vnet1595vnetlink  /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-migrate-vnet  Succeeded
+
+Zone: privatelink.prod.migration.windowsazure.com  Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Record
+---------------------------------------------------
+3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm
+618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc
+034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub
+Link                                VNet                                                                                                                                                                        State
+----------------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ---------
+azmpe-lab-migrate-vnet1595vnetlink  /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-migrate-vnet  Succeeded
+
+Zone: privatelink.siterecovery.windowsazure.com  Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Record
+---------------------------------------
+5685023632935581021-asr-pod01-id1.myw
+5685023632935581021-asr-pod01-prot2.myw
+5685023632935581021-asr-pod01-rcm1.myw
+5685023632935581021-asr-pod01-srs1.myw
+5685023632935581021-asr-pod01-tel1.myw
+Link                                VNet                                                                                                                                                                        State
+----------------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ---------
+azmpe-lab-migrate-vnet1595vnetlink  /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-migrate-vnet  Succeeded
+
+Zone: privatelink.vaultcore.azure.net  Resource group: rg-infra-winmig-apac-v-chengzhiz-poc
+Record
+----------
+mp661572kv
+Link                                VNet                                                                                                                                                                        State
+----------------------------------  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ---------
+azmpe-lab-migrate-vnet1595vnetlink  /subscriptions/95642268-5116-484d-9b88-7dfce8c20ce4/resourceGroups/rg-infra-winmig-apac-v-chengzhiz-poc/providers/Microsoft.Network/virtualNetworks/azmpe-lab-migrate-vnet  Succeeded
+PS /home/v-chengzhiz> 
+
+GitHub Copilot: The DNS records exist, but **all four private DNS zones are linked only to `azmpe-lab-migrate-vnet`**. The appliance is in `azmpe-lab-sim-onprem-vnet`. VNet peering does not make private DNS zone links visible across VNets, so the appliance is resolving the public addresses instead of the private endpoint IPs.
+
+Add a link from the simulated on-prem VNet to each existing zone. This PowerShell loop checks for an existing link first, so it won’t try to create duplicates:
+
+```powershell
+$rg = 'rg-infra-winmig-apac-v-chengzhiz-poc'
+$simVnet = 'azmpe-lab-sim-onprem-vnet'
+
+$simVnetId = az network vnet show `
+    --resource-group $rg `
+    --name $simVnet `
+    --query id -o tsv
+
+$zones = @(
+    'privatelink.blob.core.windows.net'
+    'privatelink.prod.migration.windowsazure.com'
+    'privatelink.siterecovery.windowsazure.com'
+    'privatelink.vaultcore.azure.net'
+)
+
+foreach ($zone in $zones) {
+    $links = @(
+        az network private-dns link vnet list `
+            --resource-group $rg `
+            --zone-name $zone `
+            -o json | ConvertFrom-Json
+    )
+
+    $existingLink = $links | Where-Object {
+        $_.virtualNetwork.id -eq $simVnetId
+    } | Select-Object -First 1
+
+    if ($existingLink) {
+        Write-Host "$zone already linked to $simVnet"
+    } else {
+        az network private-dns link vnet create `
+            --resource-group $rg `
+            --zone-name $zone `
+            --name 'azmpe-lab-sim-vnetlink' `
+            --virtual-network $simVnetId `
+            --registration-enabled false
+    }
+}
+```
+
+Then, **inside the appliance VM**, flush its DNS cache and check that each FQDN returns the expected private IP:
+
+```powershell
+Clear-DnsClientCache
+
+$checks = @(
+    @{ Fqdn = '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.4' }
+    @{ Fqdn = '3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.6' }
+    @{ Fqdn = '618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.13' }
+    @{ Fqdn = '5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com'; Expected = '10.30.1.12' }
+    @{ Fqdn = 'mp661572kv.vault.azure.net'; Expected = '10.30.1.7' }
+    @{ Fqdn = 'mp665518usa.blob.core.windows.net'; Expected = '10.30.1.5' }
+)
+
+foreach ($item in $checks) {
+    $ips = @(
+        Resolve-DnsName $item.Fqdn -Type A -DnsOnly -ErrorAction SilentlyContinue |
+            Where-Object Type -eq 'A' |
+            Select-Object -ExpandProperty IPAddress -Unique
+    )
+
+    [pscustomobject]@{
+        Fqdn       = $item.Fqdn
+        ExpectedIP = $item.Expected
+        Resolved   = $ips -join ', '
+        Matches    = $ips -contains $item.Expected
+    }
+} | Format-Table -AutoSize -Wrap
+```
+
+`Matches` should be `True` for every row. Then test TCP 443 to each name:
+
+```powershell
+foreach ($item in $checks) {
+    $result = Test-NetConnection $item.Fqdn -Port 443 -WarningAction SilentlyContinue
+    [pscustomobject]@{
+        Fqdn           = $item.Fqdn
+        RemoteAddress  = $result.RemoteAddress
+        Tcp443Succeeded = $result.TcpTestSucceeded
+    }
+} | Format-Table -AutoSize -Wrap
+```
+
+The remote addresses should be the listed `10.30.1.x` private IPs and `Tcp443Succeeded` should be `True`. If DNS still returns public IPs, check that each link’s provisioning state is `Succeeded` and that the queried VNet ID is exactly `azmpe-lab-sim-onprem-vnet`.
+
+User: PS C:\Users\azureadmin> Clear-DnsClientCache
+
+$checks = @(
+    @{ Fqdn = '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.4' }
+    @{ Fqdn = '3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.6' }
+    @{ Fqdn = '618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.13' }
+    @{ Fqdn = '5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com'; Expected = '10.30.1.12' }
+    @{ Fqdn = 'mp661572kv.vault.azure.net'; Expected = '10.30.1.7' }
+    @{ Fqdn = 'mp665518usa.blob.core.windows.net'; Expected = '10.30.1.5' }
+)
+
+foreach ($item in $checks) {
+    $ips = @(
+        Resolve-DnsName $item.Fqdn -Type A -DnsOnly -ErrorAction SilentlyContinue |
+            Where-Object Type -eq 'A' |
+            Select-Object -ExpandProperty IPAddress -Unique
+    )
+
+    [pscustomobject]@{
+        Fqdn       = $item.Fqdn
+        ExpectedIP = $item.Expected
+        Resolved   = $ips -join ', '
+        Matches    = $ips -contains $item.Expected
+    }
+} | Format-Table -AutoSize -Wrap
+At line:25 char:3
++ } | Format-Table -AutoSize -Wrap
++   ~
+An empty pipe element is not allowed.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : EmptyPipeElement
+ 
+
+PS C:\Users\azureadmin> 
+
+GitHub Copilot: PowerShell doesn’t allow piping a `foreach` statement directly in that form. Save its output to a variable, then format the variable:
+
+```powershell
+Clear-DnsClientCache
+
+$checks = @(
+    @{ Fqdn = '034dafbf-b455-48b8-b7dc-6009bfbd7712-isv.myw.hub.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.4' }
+    @{ Fqdn = '3be8d29e351347dd888dcf1be9fb78b8-agent.myw.asm.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.6' }
+    @{ Fqdn = '618f3161-af47-424b-9951-e8051548ef9a-agent.myw.disc.privatelink.prod.migration.windowsazure.com'; Expected = '10.30.1.13' }
+    @{ Fqdn = '5685023632935581021-asr-pod01-srs1.myw.privatelink.siterecovery.windowsazure.com'; Expected = '10.30.1.12' }
+    @{ Fqdn = 'mp661572kv.vault.azure.net'; Expected = '10.30.1.7' }
+    @{ Fqdn = 'mp665518usa.blob.core.windows.net'; Expected = '10.30.1.5' }
+)
+
+$results = foreach ($item in $checks) {
+    $ips = @(
+        Resolve-DnsName $item.Fqdn -Type A -DnsOnly -ErrorAction SilentlyContinue |
+            Where-Object Type -eq 'A' |
+            Select-Object -ExpandProperty IPAddress -Unique
+    )
+
+    [pscustomobject]@{
+        Fqdn       = $item.Fqdn
+        ExpectedIP = $item.Expected
+        Resolved   = $ips -join ', '
+        Matches    = $ips -contains $item.Expected
+    }
+}
+
+$results | Format-Table -AutoSize -Wrap
+```
+
+Use the same pattern for the TCP test: assign the `foreach` output to `$tcpResults`, then run `$tcpResults | Format-Table ...`.
+
+User: PS C:\Users\azureadmin> foreach ($item in $checks) {
+    $result = Test-NetConnection $item.Fqdn -Port 443 -WarningAction SilentlyContinue
+    [pscustomobject]@{
+        Fqdn           = $item.Fqdn
+        RemoteAddress  = $result.RemoteAddress
+        Tcp443Succeeded = $result.TcpTestSucceeded
+    }
+} | Format-Table -AutoSize -Wrap
+At line:8 char:3
++ } | Format-Table -AutoSize -Wrap
++   ~
+An empty pipe element is not allowed.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : EmptyPipeElement
+ 
+
+PS C:\Users\azureadmin> 
+
+GitHub Copilot: It’s the same PowerShell syntax issue: capture the `foreach` output first, then pipe that variable to `Format-Table`.
+
+```powershell
+$tcpResults = foreach ($item in $checks) {
+    $result = Test-NetConnection `
+        -ComputerName $item.Fqdn `
+        -Port 443 `
+        -WarningAction SilentlyContinue
+
+    [pscustomobject]@{
+        Fqdn            = $item.Fqdn
+        RemoteAddress   = $result.RemoteAddress
+        Tcp443Succeeded = $result.TcpTestSucceeded
+    }
+}
+
+$tcpResults | Format-Table -AutoSize -Wrap
+```
+
+Expect `Tcp443Succeeded` to be `True` for each hostname, and `RemoteAddress` to show the corresponding private endpoint IP.
