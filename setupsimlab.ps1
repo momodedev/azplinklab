@@ -134,7 +134,15 @@ function Invoke-ArmPut {
         [Parameter(Mandatory)][hashtable]$Body
     )
     $json = $Body | ConvertTo-Json -Depth 20 -Compress
-    $response = Invoke-AzRestMethod -Method PUT -Path $Path -Payload $json -WaitForCompletion
+    try {
+        $response = Invoke-AzRestMethod -Method PUT -Path $Path -Payload $json -ErrorAction Stop
+    } catch {
+        $exception = $_.Exception
+        while ($exception.InnerException) {
+            $exception = $exception.InnerException
+        }
+        throw "ARM PUT request failed. Path=$Path, Error=$($exception.Message)"
+    }
     if ($response.StatusCode -notin 200, 201, 202) {
         throw "ARM PUT failed. StatusCode=$($response.StatusCode), Path=$Path, Content=$($response.Content)"
     }
