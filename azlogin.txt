@@ -1,0 +1,542 @@
+PS C:\Users\v-chengzhiz\azplinklab> az login       
+A web browser has been opened at https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize. Please continue the login in the web browser. If no web browser is available or if the web browser fails to open, use device code flow with `az login --use-device-code`.
+The following tenants don't contain accessible subscriptions. Use 'az login --allow-no-subscriptions' to have tenant level access.
+8dc94566-ec40-4aad-abe0-739751b9d5b4 'CMF'
+The following tenants require Multi-Factor Authentication (MFA). Use 'az login --tenant TENANT_ID' to explicitly login to a tenant.
+0e478cd4-3e52-496d-ac3a-419ca58ba7ac 'Contoso'
+d32cd48f-486e-4423-a0a9-6f4bdda8e115 'Contoso'
+[
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "e22c58b4-12b2-4781-84ad-1a6ffc6366de",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "MSFT-ClientCAB-1",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "c3e3eef9-58d5-4e73-9875-98cf33f62497",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "M3CA Shell NonProd",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "89cf644e-2dd7-4681-8972-a1eb092bbae0",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "2f4a9838-26b7-47ee-be60-ccc1fdec5953"
+      }
+    ],
+    "name": "Copilot Experience Azure Internal",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "a471d615-ff98-4e80-b375-a19543d4691e",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "ODSP EFun Dev Resources",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "b65b516b-415b-4c68-a254-bfa7411275f8",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "OneBranch Services ER - Dev",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "4c33a6bb-d566-4d0b-8951-00b55a91fba8",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "AzPIESecurity-DEV-Apple",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "f1d79e73-f8e3-4b10-bfdb-4207ca0723ed",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "33e01921-4d64-4f8c-a055-5bdaffd5e33d"
+      }
+    ],
+    "name": "AML Infra - Engineering System",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "96c1e83f-a544-4a27-86bc-b0c821745ae7",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "FunGates-DiffPipeline-Dev",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "e188d541-aa57-45e8-8687-c83dc57a671e",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Developer VM Optimization",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "3353d31f-0227-4b6d-a77e-b4ad0d17aa46",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Windows Payload Tracking",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "526e4a58-8d12-471e-8e1f-5ef6992d4426",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Containment Copilot PPE",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "e4addc1b-81a6-4093-adba-cf291ec1a36b",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Matt Clark Dev Test",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "86f010b8-6473-4cb9-90c1-671c74faa4ee",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "emilyzhu dev subscription",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "8cff5c8a-98f3-44ad-b300-2d44716c802c",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "2f4a9838-26b7-47ee-be60-ccc1fdec5953"
+      }
+    ],
+    "name": "Service 360 Test",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "54b875cc-a81a-4914-8bfd-1a36bc7ddf4d",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "MSFT-WindowsVirtualDesktop-01",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "29de2cfc-f00a-43bb-bdc8-3108795bd282",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "MSFT-Modern Device-Modern Mgmt-Imaging00",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "2d9f93a3-1e67-480e-b573-db5b5a104096",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "2f4a9838-26b7-47ee-be60-ccc1fdec5953"
+      }
+    ],
+    "name": "Core-FUN-AppCompat-Gates",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "629f0916-1d82-4872-bff7-5ae3f35d9eaa",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "EXP - SKAI",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "e9c0e7fc-82d1-4aeb-b184-d254d33a68cd",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "HLS.PLATFORM.PE.SANDBOX1",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "37f6f6b5-2304-4f46-9334-6dbcb4441f48",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "MSFT-MVD-04-Shared-CSS",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "12c328a2-956c-4968-a802-beef38ceb314",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "FastTrack Securify Toolkit Public Prod",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "0832b3b6-22b3-4c47-8d8b-572054b97257",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "MSFT-Provisioning-01[Prod]",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "d4cba6f9-bd6c-4192-b3b6-b6da2459c349",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "SFDA-TelemetryInsights-PROD",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "160704ab-164d-40e8-bbbc-fe35fc2045c8",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Deployments NonProd",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "9ef4bb49-5bba-46e2-910a-affe74079570",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "FastTrack Secure Infrastructure Public - Prod",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "d36c99c1-a188-46d4-b2ed-920e20dd554e",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "COIE-EHS-CORP-DEV",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "879c3e12-a379-45c7-b1b1-5a44f3cc2713",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "AI Impact Analyzer",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "39675fbf-5b47-472e-9bb9-5570c6edbd4f",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "COSMIC AKS PlayGround",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "66522bd8-56b0-44fa-bd1f-23485611a6c3",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "FoSSE Redmond",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "b67993e8-0937-4812-af89-520a495da302",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Liquid - Development",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "121e5c80-abfa-4b44-a2a3-8e654300468a",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Liquid - PPE",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "id": "bb4525ad-6bb1-419b-a85a-9677d24e381f",
+    "isDefault": false,
+    "managedByTenants": [],
+    "name": "Liquid - Production",
+    "state": "Enabled",
+    "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "id": "ffe7c7cd-f495-444a-9df7-9bcb39da2d66",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47"
+      },
+      {
+        "tenantId": "975f013f-7f24-47e8-a7d3-abc4752bf346"
+      }
+    ],
+    "name": "wez",
+    "state": "Enabled",
+    "tenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "id": "8d6bd1eb-ae31-4f2c-856a-0f8e47115c4b",
+    "isDefault": true,
+    "managedByTenants": [
+      {
+        "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47"
+      },
+      {
+        "tenantId": "975f013f-7f24-47e8-a7d3-abc4752bf346"
+      },
+      {
+        "tenantId": "2f4a9838-26b7-47ee-be60-ccc1fdec5953"
+      }
+    ],
+    "name": "alexawang",
+    "state": "Enabled",
+    "tenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  },
+  {
+    "cloudName": "AzureCloud",
+    "homeTenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "id": "c456f6b9-07df-4113-87d6-b43b7d27ab11",
+    "isDefault": false,
+    "managedByTenants": [
+      {
+        "tenantId": "72f988bf-86f1-41af-91ab-2d7cd011db47"
+      },
+      {
+        "tenantId": "2f4a9838-26b7-47ee-be60-ccc1fdec5953"
+      },
+      {
+        "tenantId": "975f013f-7f24-47e8-a7d3-abc4752bf346"
+      }
+    ],
+    "name": "MCAPS-Hybrid-REQ-70528-2024-guojianli",
+    "state": "Enabled",
+    "tenantId": "16b3c013-d300-468d-ac64-7eda0820b6d3",
+    "user": {
+      "name": "v-chengzhiz@microsoft.com",
+      "type": "user"
+    }
+  }
+]
